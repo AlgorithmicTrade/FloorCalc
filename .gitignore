@@ -15,6 +15,7 @@ claude-code-orchestrator-kit/
 
 # Temporary artifacts
 .tmp/
+release-notes-current.md
 
 # Logs
 *.log

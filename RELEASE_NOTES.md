@@ -2,19 +2,103 @@
 
 User-facing release notes for all versions.
 
+## v1.0.1
+
+_Released on 2026-05-07_
+
+### 🛠️ Release Fix
+
+- Восстановлена публикация артефактов на GitHub Releases. В предыдущем релизе `v1.0.0` workflow `Build & publish` упал на загрузке `.exe` из-за активного ruleset *Immutable Releases* (`422: Cannot upload assets to an immutable release`). Ruleset отключён, релиз перевыпущен под версией `1.0.1` (тег `v1.0.0` сохраняется по политике запрета удаления тегов).
+- Содержательная функциональность приложения идентична `v1.0.0` — это релиз-фикс CI, не код-изменение.
+- Версии `package.json` и `package-lock.json` синхронизированы (в `1.0.0` lock остался на `0.2.0`).
+
+### 🔄 Auto-update
+
+- `FloorCalc-0.2.0-portable.exe`, собранный с вшитым `app-update.yml`, при первом запуске обнаружит `latest.yml` от `1.0.1` и предложит обновление через `UpdateBanner`.
+
 ## v1.0.0
 
 _Released on 2026-05-07_
 
 ### ✨ New Features
 
-- **domain**: Add 3 source file(s), update 22 source file(s), +2 more
+- **App**: Mixed-type раскладка с rotation, дифференциация режимов и переработка UI
 
-  Changes in this commit:
-  - add 3 source file(s)
-  - update 22 source file(s)
-  - add 3 test(s)
-  - update 3 test(s)
+  Решение:
+  - Реализован mixed-type алгоритм: одна схема комбинирует разные типоразмеры рулонов из активного каталога.
+  - Добавлен rotation post-pass — горизонтальные и вертикальные куски в одной схеме (замена однородного tail-row одним повёрнутым piece из подходящего offcut'а).
+  - calculateMixedBestOrientation перебирает обе ориентации комнаты (width↔length swap), pieces транспонируются обратно в исходную систему координат.
+  - Режимы economy/optimal теперь дают разные результаты: economy агрессивно реюзит обрезки → меньше рулонов; optimal предпочитает целые куски при placedAtY=0 → меньше резов.
+  - selectMixed перебирает mixed + N single-type кандидатов и выбирает лучший по lex-ключу с tie-break по cuts.
+  - UI полностью переработан: stats и схема внутри одного Konva-stage (попадают в экспорт PNG/PDF/print/copy), HTML hover-tooltip у курсора, цветные swatch для типоразмеров, layout с RoomEditor+RollCatalog в левой колонке.
+  - Electron: окно уменьшено на 30%, версия в заголовке, application/context menu убраны, file-logging диагностики, persistence размера окна, защита от ENOENT app-update.yml в локальном portable build.
+  - Renderer-CSP перенесён из meta-тега в HTTP-header (file:// + meta + script-src 'self' блокировал ES-модули → чёрное окно).
+  - react-konva апгрейд 18.2 → 19.2.3 (совместимость с React 19, фикс ReactCurrentBatchConfig).
+
+  Изменения:
+  - src/domain/calculator/mixed.ts (новый):
+    - calculateMixed: greedy с общим OffcutBank и rollIndexToType для разных типов.
+    - chooseBestRoll: mode-aware выбор (economy=min sufficient.length, optimal=max sufficient.length, fallback=max insufficient).
+    - calculateMixedBestOrientation: перебор обеих ориентаций + транспонирование pieces.
+    - applyRotationPass: детект однородного tail-row → замена одним rotated piece из offcut'а.
+    - pickPrimaryRollTypeId: primary type по площади.
+  - src/domain/calculator/selectMixed.ts (новый):
+    - countCuts: эвристика числа резов по piece-size vs source-roll (учитывает rotated).
+    - selectMixed: mixed + N single-type кандидатов, lex-key (rollsUsed/pieces.length/cuts/waste для economy, pieces.length/cuts/rollsUsed/waste для optimal).
+  - src/domain/calculator/seams.ts:
+    - computeSeamCount (новая) — кол-во дискретных швов.
+    - computeSeamLength помечена @deprecated.
+  - src/domain/calculator/{economy,optimal,selectRoll,bank,index}.ts:
+    - миграция на seamCount, findBestFor с min-length параметром, экспорты mixed/selectMixed/countCuts.
+  - src/domain/types.ts:
+    - Piece.rotated?: boolean.
+    - CalculationResult.seamCount вместо totalSeamLengthMm.
+  - src/domain/units.ts:
+    - formatMTrim, formatAreaTrim — без trailing zeros.
+  - src/components/result/SchemeRenderer.ts:
+    - getRollTypeColor по позиции в каталоге, stats-block внутри stage (rollsUsed/Кусков/waste + цветные swatch на 2-й строке), cut-labels с pieceId (vertical+horizontal), поддержка rotated в источнике, threshold pieceLabel снижен до 14×14, formatMTrim/formatAreaTrim для размеров.
+  - src/components/result/SchemeView.tsx:
+    - native Konva (без react-konva), Group по pieceId с hover-listener, HTML overlay-tooltip за курсором (mousemove), useImperativeHandle с временным visible(true) cutLabel перед toCanvas/toDataURL/toBlob, поддержка rotated piece в tooltip lines.
+  - src/components/result/ResultCard.tsx:
+    - ResultActions перенесён в header (рядом с warnMark), MODE_TOOLTIPS на Eyebrow, fullCatalog → SchemeView, ResultText скрыт через .visuallyHidden.
+  - src/components/result/ResultText.tsx:
+    - «Стыков» → «Кусков», result.pieces.length, formatResultAsPlainText обновлён.
+  - src/components/rooms/RoomEditor.tsx:
+    - убраны пояснения «(поперёк/вдоль рулона)».
+  - src/components/rooms/RoomResultPanel.tsx:
+    - RoomEditor вынесен в App.tsx, useShallow(selectActiveRolls) — фикс React error #185 (zustand 5 + useSyncExternalStore).
+  - src/App.tsx:
+    - layout: left = RoomEditor + RollCatalog, right = RoomTabs + RoomResultPanel.
+  - src/components/layout/AppShell.module.css:
+    - leftColumn class, ширина 400px.
+  - src/components/catalog/{AddRollForm,RollCatalog,RollRow}.tsx:
+    - MAX_MM до 100м, formatMTrim для каталога, color-swatch + catalogIndex.
+  - electron/main/index.ts:
+    - setTitle(`${APP_NAME} v${app.getVersion()}`) + page-title-updated preventDefault, Menu.setApplicationMenu(null), spellcheck:false, context-menu preventDefault.
+    - openDevTools только при FLOORCALC_DEBUG=1 или маркере <userData>/.debug.
+    - file-logging diagLog в %APPDATA%/FloorCalc/debug.log + handlers did-fail-load/render-process-gone/preload-error/console-message.
+    - CSP через session.webRequest.onHeadersReceived (file: добавлен ко всем директивам).
+    - размер окна 900×560/720×500 minimum, restoreWindowState/persistWindowState.
+  - electron/main/windowState.ts (новый): persist размера/позиции окна в %APPDATA%/FloorCalc/window-state.json, zod-валидация.
+  - electron/main/updater.ts: isUpdateConfigPresent — skip checkForUpdates/downloadUpdate если app-update.yml отсутствует.
+  - electron.vite.config.ts: removeCrossoriginPlugin (transformIndexHtml убирает crossorigin из script/link для file:// + sandbox).
+  - index.html: CSP meta-тег удалён.
+  - electron-builder.yml: явный win.icon = resources/icon.ico.
+  - package.json: react-konva 19.2.3 (peer react ^19.2).
+  - resources/icon.ico: обновлена иконка.
+  - tests/domain/: calculator.mixed.test.ts (новый, 32), calculator.mixed-orientation.test.ts (новый, 19), calculator.mixed-rotation.test.ts (новый, 16); обновлены economy/optimal/seams под seamCount.
+
+  Эффект:
+  - Mixed-type расчёт с двумя ориентациями + rotation post-pass: на сценарии 21×4.9 м pieces.length снизился с 6 до 4 (rotated piece заменил три tail-куска).
+  - На сценарии 3×7.5 м с активными 2×20 и 1.5×15 в optimal выбирается 1.5×15 (2 куска, 2 реза vs прежние 3 реза с 2×20).
+  - Режимы economy и optimal реально различаются по rollsUsed/pieces/cuts/waste.
+  - Корректно отображаются rotated куски, цветные swatch у типоразмеров, hover-tooltip следует за курсором; cut-labels попадают в экспорт PNG/PDF/print/copy.
+  - Чёрное окно при запуске устранено (CSP-fix + react-konva апгрейд + crossorigin remove).
+  - Размер окна −30%, заголовок «FloorCalc v1.0.0», нет application/context menu.
+  - Диагностика — в %APPDATA%/FloorCalc/debug.log; DevTools опциональный (FLOORCALC_DEBUG=1).
+  - Размер и позиция окна сохраняются между сессиями.
+  - Локальная portable-сборка не показывает «Ошибка обновления» в отсутствии app-update.yml.
+  - Тесты: 156 → 171 зелёные.
 
 
 ---

@@ -31,6 +31,21 @@ jobs:
       - name: Run tests
         run: npm run test
 
+      - name: Extract current release notes
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          awk -v v="$VERSION" '
+            /^## v/ { if (section) exit; if ($0 == "## v" v) { section = 1; next } }
+            section { print }
+          ' RELEASE_NOTES.md > release-notes-current.md
+          if [ ! -s release-notes-current.md ]; then
+            echo "release-notes-current.md is empty for version $VERSION — falling back to full RELEASE_NOTES.md"
+            cp RELEASE_NOTES.md release-notes-current.md
+          fi
+          echo "----- release-notes-current.md (first 30 lines) -----"
+          head -30 release-notes-current.md
+
       - name: Build & publish
         run: npm run build:publish
         env:

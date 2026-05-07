@@ -26,4 +26,6 @@ publish:
     repo: FloorCalc
     releaseType: release
     vPrefixedTagName: true
+releaseInfo:
+  releaseNotesFile: release-notes-current.md
 electronVersion: 32.2.7
