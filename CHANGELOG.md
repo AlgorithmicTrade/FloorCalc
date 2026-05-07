@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-05-07
+
+### Fixed
+
+- **Updater**: переписан helper-скрипт обновления на чистый cmd.exe — устранён сбой `^ : Имя ^ не распознано` после нажатия «Перезапустить и обновить».
+
+  Решение:
+  - В v1.0.4 helper-bat вызывал inline `powershell.exe -Command "..."` через многострочный `^`-continuation. На запуске cmd падал с «Имя `^` не распознано как имя командлета», PS-блок никогда не выполнялся, exe не заменялся. Две причины:
+    1. `^` перед CRLF теряет escape-функцию, если строка заканчивается **внутри двойных кавычек** PS-блока — cmd считывает `^` буквально, как имя команды.
+    2. `writeFileSync` от Node.js пишет в LF (`\n`), а cmd.exe ожидает CRLF — обработка `^`-continuation в LF-only файлах ненадёжная.
+  - Helper переписан на **чистый cmd**: `copy /Y` для замены exe вместо `Copy-Item`; `tasklist /FI "PID eq … " | findstr` для wait-loop; `start ""` для детачнутого запуска. PowerShell не используется — нет проблем с экранированием/кавычками/continuation.
+  - Файл записывается с `\r\n` (CRLF) явно через `lines.join('\r\n')` — обязательно для надёжного парсинга cmd.exe.
+  - Добавлен `chcp 65001 >nul` в начале — UTF-8 на случай путей с non-ASCII символами.
+  - Retry-loop для copy сохранён (10 × 1 sec через goto + `set /A RETRIES`).
+  - Логирование в `%TEMP%\floorcalc-update-<uuid>.log` через `echo … >> "%LOGFILE%"` — пишется на каждом шаге (start, parent exit, copy success/fail per attempt, removed pending, start invoked).
+
+  Изменения:
+  - electron/main/updaterHelper.ts:
+    - `writeUpdateHelperScript()` полностью переписан. Логика wait→copy retry→remove→start выражена native cmd-командами. `lines.join('\r\n')` гарантирует Windows line-endings. PARENT_IMAGE = `FloorCalc.exe` для tasklist-фильтра.
+
+  Эффект:
+  - При нажатии «Перезапустить и обновить» helper теперь действительно выполняется до конца:
+    - ждёт завершения parent process (tasklist),
+    - копирует скачанный exe поверх исходного portable.exe (через `PORTABLE_EXECUTABLE_FILE`),
+    - удаляет pending,
+    - запускает новую версию через `start ""`.
+  - Никаких больше сбоев на этапе разбора скрипта cmd-парсером.
+  - Лог-файл `%TEMP%\floorcalc-update-<uuid>.log` теперь стабильно пишется — все шаги видны в timeline.
+
 ## [1.0.4] - 2026-05-07
 
 ### Fixed

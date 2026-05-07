@@ -12,90 +12,92 @@ export interface UpdateHelperOptions {
 /**
  * Записывает bat-файл обновления и возвращает его путь.
  *
- * Почему bat, а не ps1:
- *   spawn('powershell.exe', ..., { detached: true }) на Windows НЕ гарантирует
- *   полного отделения от родительского job-object — Electron может создавать
- *   child-job при старте процесса, и PowerShell (.NET-runtime) наследует его,
- *   из-за чего process group не отделяется и child убивается вместе с родителем.
- *   cmd.exe /c start "" /B bat-файл — единственный надёжный способ сделать
- *   полностью независимый (detached) процесс на Windows без GUI-промптов.
+ * Чистый cmd-скрипт без PowerShell-блоков.
+ *   Предыдущая попытка использовала inline `powershell.exe -Command "..."` с многострочным
+ *   `^`-continuation внутри bat. Это ломалось двумя способами:
+ *     1) `^` перед CRLF теряет escape-функцию, если строка заканчивается внутри двойных кавычек.
+ *     2) Кодировка/line endings писались LF от Node.js — CMD ожидает CRLF и обрывался на середине.
+ *   Результат: cmd считывал PowerShell-кусок как отдельную команду «^», падал с
+ *   «Имя ^ не распознано» и helper не выполнялся.
  *
- * Copy-Item логика остаётся в PowerShell (через -Command inline), чтобы
- * корректно обрабатывать пути с пробелами и retry на AV/indexer-локи.
+ * Сейчас — только нативные cmd-команды: `copy /Y` для замены exe, `tasklist /FI "PID eq …"`
+ * для wait-loop, `start "" "<exe>"` для детачнутого запуска. Никаких внешних интерпретаторов
+ * — нет проблем с экранированием.
+ *
+ * Файл пишется с CRLF line endings (`\r\n`) — обязательно для надёжного парсинга cmd.exe.
  */
 export function writeUpdateHelperScript(opts: UpdateHelperOptions): string {
   const uuid = randomUUID();
   const helperPath = join(tmpdir(), `floorcalc-update-${uuid}.bat`);
   const logPath    = join(tmpdir(), `floorcalc-update-${uuid}.log`);
 
-  // Экранирование для bat: " → "" (внутри двойных кавычек cmd)
-  // Экранирование для PS -Command строки внутри bat: ' → ''
-  const batEscNew = opts.newExePath.replace(/"/g, '""');
-  const batEscOld = opts.oldExePath.replace(/"/g, '""');
-  const batEscLog = logPath.replace(/"/g, '""');
+  // В bat значения внутри `set "VAR=..."` могут содержать всё кроме `"`.
+  // Внутри `"..."` cmd `"` экранируется как `""`.
+  const escNew = opts.newExePath.replace(/"/g, '""');
+  const escOld = opts.oldExePath.replace(/"/g, '""');
+  const escLog = logPath.replace(/"/g, '""');
 
-  const psEscNew  = opts.newExePath.replace(/'/g, "''");
-  const psEscOld  = opts.oldExePath.replace(/'/g, "''");
-  const psEscLog  = logPath.replace(/'/g, "''");
+  // Маркер, по которому tasklist определяет родительский процесс — имя exe Electron.
+  // FloorCalc.exe для portable build (см. electron-builder.yml: productName: FloorCalc).
+  const PARENT_IMAGE = 'FloorCalc.exe';
 
-  // bat-файл: ждёт завершения родительского PID через tasklist,
-  // затем вызывает powershell -Command для Copy-Item retry (10×1s) и запуска.
-  // Лог пишется через >> прямо из bat (базовые шаги) и из PS (детальные шаги).
-  const script = `@echo off
-setlocal
+  const lines = [
+    '@echo off',
+    'setlocal',
+    'chcp 65001 >nul 2>&1',
+    '',
+    `set "LOGFILE=${escLog}"`,
+    `set "NEWEXE=${escNew}"`,
+    `set "OLDEXE=${escOld}"`,
+    `set "PID=${opts.pid}"`,
+    '',
+    'echo [%DATE% %TIME%] bat helper started, parent PID=%PID% >> "%LOGFILE%"',
+    'echo [%DATE% %TIME%] new=%NEWEXE% >> "%LOGFILE%"',
+    'echo [%DATE% %TIME%] old=%OLDEXE% >> "%LOGFILE%"',
+    '',
+    ':waitloop',
+    `tasklist /FI "PID eq %PID%" 2>nul | findstr /I /C:"${PARENT_IMAGE}" >nul 2>&1`,
+    'if %ERRORLEVEL% == 0 (',
+    '  timeout /T 1 /NOBREAK >nul 2>&1',
+    '  goto waitloop',
+    ')',
+    'echo [%DATE% %TIME%] parent process exited >> "%LOGFILE%"',
+    '',
+    'rem небольшая пауза, чтобы AV/indexer успел отпустить exe',
+    'timeout /T 2 /NOBREAK >nul 2>&1',
+    '',
+    'set RETRIES=10',
+    ':copyloop',
+    'copy /Y "%NEWEXE%" "%OLDEXE%" >nul 2>>"%LOGFILE%"',
+    'if %ERRORLEVEL% == 0 (',
+    '  echo [%DATE% %TIME%] copy succeeded >> "%LOGFILE%"',
+    '  goto copydone',
+    ')',
+    'echo [%DATE% %TIME%] copy failed, retries left=%RETRIES% >> "%LOGFILE%"',
+    'set /A RETRIES=%RETRIES%-1',
+    'if %RETRIES% GTR 0 (',
+    '  timeout /T 1 /NOBREAK >nul 2>&1',
+    '  goto copyloop',
+    ')',
+    'echo [%DATE% %TIME%] FATAL: all copy attempts failed >> "%LOGFILE%"',
+    'goto cleanup',
+    '',
+    ':copydone',
+    'del /F /Q "%NEWEXE%" >nul 2>&1',
+    'echo [%DATE% %TIME%] removed pending file >> "%LOGFILE%"',
+    '',
+    'echo [%DATE% %TIME%] launching new exe via start >> "%LOGFILE%"',
+    'start "" "%OLDEXE%"',
+    'echo [%DATE% %TIME%] start invoked, errorlevel=%ERRORLEVEL% >> "%LOGFILE%"',
+    '',
+    ':cleanup',
+    'del /F /Q "%~f0" >nul 2>&1',
+    'endlocal',
+    ''
+  ];
 
-set "LOGFILE=${batEscLog}"
-set "NEWEXE=${batEscNew}"
-set "OLDEXE=${batEscOld}"
-set "PID=${opts.pid}"
-
-echo [%DATE% %TIME%] bat helper started, parent PID=%PID% >> "%LOGFILE%"
-echo [%DATE% %TIME%] new=%NEWEXE% >> "%LOGFILE%"
-echo [%DATE% %TIME%] old=%OLDEXE% >> "%LOGFILE%"
-
-:waitloop
-tasklist /FI "PID eq %PID%" 2>nul | findstr /I /C:"FloorCalc" >nul 2>&1
-if %ERRORLEVEL% == 0 (
-  timeout /T 1 /NOBREAK >nul 2>&1
-  goto waitloop
-)
-echo [%DATE% %TIME%] parent process exited >> "%LOGFILE%"
-
-timeout /T 2 /NOBREAK >nul 2>&1
-
-powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
-  "$log='${psEscLog}'; ^
-  function lg($m){$t=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff');Add-Content -Path $log -Value \"[$t] $m\" -EA SilentlyContinue}; ^
-  try { ^
-    lg 'ps-block entered'; ^
-    $ok=$false; ^
-    for($i=1;$i -le 10;$i++){ ^
-      try { ^
-        Copy-Item -Force -Path '${psEscNew}' -Destination '${psEscOld}' -EA Stop; ^
-        lg \"copy attempt $i succeeded\"; ^
-        $ok=$true; ^
-        break ^
-      } catch { ^
-        lg \"copy attempt $i failed: $($_.Exception.Message)\"; ^
-        Start-Sleep -Seconds 1 ^
-      } ^
-    }; ^
-    if(-not $ok){lg 'ERROR: all copy attempts failed'; exit 1}; ^
-    Remove-Item -Force -Path '${psEscNew}' -EA SilentlyContinue; ^
-    lg 'removed pending file'; ^
-    lg 'launching new exe'; ^
-    Start-Process -FilePath '${psEscOld}'; ^
-    lg 'Start-Process invoked' ^
-  } catch { ^
-    lg \"FATAL: $($_.Exception.Message)\"; ^
-    exit 1 ^
-  }"
-
-echo [%DATE% %TIME%] ps-block exited with code %ERRORLEVEL% >> "%LOGFILE%"
-
-del /F /Q "%~f0" >nul 2>&1
-endlocal
-`;
+  // CRLF — обязательно для cmd.exe на Windows.
+  const script = lines.join('\r\n');
 
   writeFileSync(helperPath, script, { encoding: 'utf8' });
   return helperPath;
