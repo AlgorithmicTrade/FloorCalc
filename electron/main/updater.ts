@@ -109,27 +109,27 @@ export class UpdaterService {
     };
 
     try {
-      const helperPath = writeUpdateHelperScript({
+      const { vbsPath, batPath } = writeUpdateHelperScript({
         pid: process.pid,
         newExePath: this.downloadedFilePath,
         oldExePath: targetExePath
       });
 
-      spawnLogEntry(`installAndRestart: helperPath=${helperPath}`);
+      spawnLogEntry(`installAndRestart: vbsPath=${vbsPath}`);
+      spawnLogEntry(`installAndRestart: batPath=${batPath}`);
       spawnLogEntry(`installAndRestart: targetExePath=${targetExePath}`);
 
-      // Запускаем bat через cmd.exe /c start "" /B — единственный надёжный способ
-      // полностью отделиться от родительского Windows job-object на Windows.
-      // spawn('powershell.exe', ..., { detached: true }) НЕ гарантирует отвязки
-      // от job-object, и child может быть убит вместе с Electron при app.quit().
-      // cmd.exe /c start "" /B создаёт действительно независимый процесс.
+      // Запускаем VBS через wscript.exe. wscript использует GUI subsystem (не console),
+      // поэтому при запуске не возникает мерцания cmd-окна. VBS вызывает
+      // `WScript.Shell.Run("cmd /c bat", 0, False)` — `0` означает hidden window —
+      // и тут же возвращается, оставляя bat работать в фоне.
+      // Это полностью отрывает helper от Windows job-object Electron'а.
       const child = spawn(
-        'cmd.exe',
-        ['/c', 'start', '', '/B', helperPath],
+        'wscript.exe',
+        [vbsPath],
         {
           detached: true,
           stdio: 'ignore',
-          windowsVerbatimArguments: false,
           windowsHide: true,
           shell: false
         }
@@ -145,9 +145,8 @@ export class UpdaterService {
 
       child.unref();
 
-      // Небольшая пауза, чтобы cmd.exe успел выполнить start перед завершением
-      // родительского процесса. spawn() — синхронный вызов, но OS нужно время
-      // на CreateProcess. 300 мс достаточно; app.quit() произойдёт позже.
+      // Небольшая пауза, чтобы wscript успел вызвать Shell.Run до завершения родителя.
+      // spawn() — синхронный, но OS нужно время на CreateProcess.
       await new Promise<void>((resolve) => setTimeout(resolve, 300));
 
       spawnLogEntry('calling app.quit()');

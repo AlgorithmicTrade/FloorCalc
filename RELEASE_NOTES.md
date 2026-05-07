@@ -2,6 +2,16 @@
 
 User-facing release notes for all versions.
 
+## v1.0.6
+
+_Released on 2026-05-07_
+
+### Improved
+
+- **Скрыто чёрное cmd-окно.** При нажатии «Перезапустить и обновить» больше не мелькает консольное окно. Helper-скрипт теперь запускается через `wscript.exe` + VBS-launcher, который стартует cmd в hidden mode.
+- **Имя файла в `release/` подхватывает версию.** После обновления `FloorCalc-0.2.0-portable.exe` автоматически переименовывается в `FloorCalc-1.0.6-portable.exe`. При следующих апдейтах имя продолжит отражать актуальную версию.
+- **Убрана ошибка «The batch file cannot be found».** Используется стандартная идиома self-deleting bat (`(goto) 2>nul & del`) — cmd не пытается читать файл после его удаления.
+
 ## v1.0.5
 
 _Released on 2026-05-07_

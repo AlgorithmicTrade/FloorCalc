@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-05-07
+
+### Improved
+
+- **Updater**: косметическая полировка процесса автообновления — скрытие cmd-окна, корректное переименование portable.exe и устранение «The batch file cannot be found».
+
+  Решение:
+  - **Скрытие cmd-окна.** Запуск helper'а изменён с `cmd.exe /c start "" /B bat` на `wscript.exe vbs`. wscript использует GUI subsystem (не console), поэтому при его запуске не возникает мелькания консольного окна. Внутри vbs `WScript.Shell.Run "cmd /c <bat>", 0, False` стартует bat в hidden mode (`windowStyle = 0`) — пользователь больше не видит чёрного окна.
+  - **Rename файла после copy.** Bat теперь извлекает basename из pending-exe (`FloorCalc-1.0.6-portable.exe`) и сравнивает с текущим именем target-exe (`FloorCalc-0.2.0-portable.exe`). Если различаются — выполняет `ren "%OLDEXE%" "<новое имя>"` после успешного `copy /Y`. В результате после обновления имя файла в `release/` отражает актуальную версию вместо «застывшей» 0.2.0. `start ""` запускается уже по новому пути.
+  - **Self-clean trick.** Вместо прямого `del "%~f0"` в конце bat теперь используется идиома `(goto) 2>nul & del "%~f0"`. `(goto)` без метки вызывает редиректнутую в `nul` ошибку, которая прерывает парсинг блока cmd до del — del выполняется как post-batch action, и cmd не пытается прочитать строку после удаления файла. Сообщение «The batch file cannot be found» больше не появляется.
+  - VBS-launcher тоже подчищается: bat в `:cleanup` блоке делает `del /F /Q "%VBSFILE%"` перед самоудалением — в `%TEMP%` не остаётся «осиротевших» vbs-файлов.
+
+  Изменения:
+  - electron/main/updaterHelper.ts:
+    - `writeUpdateHelperScript()` теперь возвращает `{ vbsPath, batPath }` (раньше — только `string`).
+    - Bat: добавлены `setlocal enabledelayedexpansion`, `for %%I in ("%NEWEXE%") do set "NEWNAME=%%~nxI"` (basename pending-файла), `for %%I in ("%OLDEXE%")` для `OLDNAME` + `OLDDIR`, переменная `FINALEXE = OLDDIR + NEWNAME`. После copy — блок `if /I not "!NEWNAME!" == "!OLDNAME!" ren …` (с fallback'ом FINALEXE на OLDEXE при ошибке rename). Пуск через `start "" "!FINALEXE!"`. Cleanup: `del vbs` + `(goto) 2>nul & del "%~f0"`.
+    - Добавлен VBS-launcher `vbsLines`: `Set objShell = CreateObject("WScript.Shell")` + `objShell.Run "cmd /c ""<bat>""", 0, False`.
+  - electron/main/updater.ts:
+    - `installAndRestart()` принимает `{ vbsPath, batPath }` от helper'а. spawn заменён с `cmd.exe /c start "" /B <bat>` на `wscript.exe <vbs>` (с `detached:true`, `windowsHide:true`, `shell:false`). spawn-лог расширен (`vbsPath`, `batPath`).
+  - package.json:
+    - `version`: `1.0.5` → `1.0.6`.
+  - package-lock.json:
+    - top-level и `packages[""]` `version`: `1.0.5` → `1.0.6`.
+  - CHANGELOG.md, RELEASE_NOTES.md:
+    - Раздел `1.0.6` (Improved/Polish).
+
+  Эффект:
+  - При нажатии «Перезапустить и обновить» — никаких визуальных артефактов: окно приложения закрывается, далее тишина, через пару секунд открывается уже новая версия.
+  - В `release/` появляется `FloorCalc-1.0.6-portable.exe` (старый `FloorCalc-0.2.0-portable.exe` исчезает после ren). При следующем апдейте 1.0.6 → 1.0.7 имя снова обновится.
+  - Лог-файлы `%TEMP%\floorcalc-spawn.log` (Electron) и `%TEMP%\floorcalc-update-<uuid>.log` (bat) сохраняются для диагностики; vbs/bat сами себя удаляют после завершения.
+
 ## [1.0.5] - 2026-05-07
 
 ### Fixed
