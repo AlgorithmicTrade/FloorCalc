@@ -9,62 +9,93 @@ export interface UpdateHelperOptions {
   oldExePath: string; // путь к исходному portable.exe (PORTABLE_EXECUTABLE_FILE)
 }
 
+/**
+ * Записывает bat-файл обновления и возвращает его путь.
+ *
+ * Почему bat, а не ps1:
+ *   spawn('powershell.exe', ..., { detached: true }) на Windows НЕ гарантирует
+ *   полного отделения от родительского job-object — Electron может создавать
+ *   child-job при старте процесса, и PowerShell (.NET-runtime) наследует его,
+ *   из-за чего process group не отделяется и child убивается вместе с родителем.
+ *   cmd.exe /c start "" /B bat-файл — единственный надёжный способ сделать
+ *   полностью независимый (detached) процесс на Windows без GUI-промптов.
+ *
+ * Copy-Item логика остаётся в PowerShell (через -Command inline), чтобы
+ * корректно обрабатывать пути с пробелами и retry на AV/indexer-локи.
+ */
 export function writeUpdateHelperScript(opts: UpdateHelperOptions): string {
-  const helperPath = join(tmpdir(), `floorcalc-update-${randomUUID()}.ps1`);
-  const logPath = join(tmpdir(), `floorcalc-update-${randomUUID()}.log`);
-  const escapedNew = opts.newExePath.replace(/'/g, "''");
-  const escapedOld = opts.oldExePath.replace(/'/g, "''");
-  const escapedLog = logPath.replace(/'/g, "''");
+  const uuid = randomUUID();
+  const helperPath = join(tmpdir(), `floorcalc-update-${uuid}.bat`);
+  const logPath    = join(tmpdir(), `floorcalc-update-${uuid}.log`);
 
-  // Copy + retry Move-Item: portable.exe может оставаться залоченным несколько секунд
-  // после quit() из-за антивируса/индексатора. Для portable target Copy-Item надёжнее
-  // Move-Item, поскольку source и destination могут быть на разных томах.
-  const script = `
-$ErrorActionPreference = 'Continue'
-$logFile = '${escapedLog}'
-function Log($msg) {
-  $stamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
-  Add-Content -Path $logFile -Value "[$stamp] $msg" -ErrorAction SilentlyContinue
-}
-try {
-  Log "helper started, pid=${opts.pid}"
-  Log "new=${escapedNew}"
-  Log "old=${escapedOld}"
-  Wait-Process -Id ${opts.pid} -Timeout 30 -ErrorAction SilentlyContinue
-  Log "process wait completed"
-  Start-Sleep -Seconds 2
+  // Экранирование для bat: " → "" (внутри двойных кавычек cmd)
+  // Экранирование для PS -Command строки внутри bat: ' → ''
+  const batEscNew = opts.newExePath.replace(/"/g, '""');
+  const batEscOld = opts.oldExePath.replace(/"/g, '""');
+  const batEscLog = logPath.replace(/"/g, '""');
 
-  $maxAttempts = 10
-  $copied = $false
-  for ($i = 1; $i -le $maxAttempts; $i++) {
-    try {
-      Copy-Item -Force -Path '${escapedNew}' -Destination '${escapedOld}' -ErrorAction Stop
-      Log "copy attempt $i succeeded"
-      $copied = $true
-      break
-    } catch {
-      Log "copy attempt $i failed: $($_.Exception.Message)"
-      Start-Sleep -Seconds 1
-    }
-  }
+  const psEscNew  = opts.newExePath.replace(/'/g, "''");
+  const psEscOld  = opts.oldExePath.replace(/'/g, "''");
+  const psEscLog  = logPath.replace(/'/g, "''");
 
-  if (-not $copied) {
-    Log "ERROR: copy failed after $maxAttempts attempts"
-    throw "copy failed"
-  }
+  // bat-файл: ждёт завершения родительского PID через tasklist,
+  // затем вызывает powershell -Command для Copy-Item retry (10×1s) и запуска.
+  // Лог пишется через >> прямо из bat (базовые шаги) и из PS (детальные шаги).
+  const script = `@echo off
+setlocal
 
-  Remove-Item -Force -Path '${escapedNew}' -ErrorAction SilentlyContinue
-  Log "removed source pending file"
+set "LOGFILE=${batEscLog}"
+set "NEWEXE=${batEscNew}"
+set "OLDEXE=${batEscOld}"
+set "PID=${opts.pid}"
 
-  Log "starting new exe..."
-  Start-Process -FilePath '${escapedOld}'
-  Log "Start-Process invoked"
-} catch {
-  Log "FATAL: $($_.Exception.Message)"
-} finally {
-  Remove-Item -Force -Path $PSCommandPath -ErrorAction SilentlyContinue
-}
-`.trim();
+echo [%DATE% %TIME%] bat helper started, parent PID=%PID% >> "%LOGFILE%"
+echo [%DATE% %TIME%] new=%NEWEXE% >> "%LOGFILE%"
+echo [%DATE% %TIME%] old=%OLDEXE% >> "%LOGFILE%"
+
+:waitloop
+tasklist /FI "PID eq %PID%" 2>nul | findstr /I /C:"FloorCalc" >nul 2>&1
+if %ERRORLEVEL% == 0 (
+  timeout /T 1 /NOBREAK >nul 2>&1
+  goto waitloop
+)
+echo [%DATE% %TIME%] parent process exited >> "%LOGFILE%"
+
+timeout /T 2 /NOBREAK >nul 2>&1
+
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+  "$log='${psEscLog}'; ^
+  function lg($m){$t=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff');Add-Content -Path $log -Value \"[$t] $m\" -EA SilentlyContinue}; ^
+  try { ^
+    lg 'ps-block entered'; ^
+    $ok=$false; ^
+    for($i=1;$i -le 10;$i++){ ^
+      try { ^
+        Copy-Item -Force -Path '${psEscNew}' -Destination '${psEscOld}' -EA Stop; ^
+        lg \"copy attempt $i succeeded\"; ^
+        $ok=$true; ^
+        break ^
+      } catch { ^
+        lg \"copy attempt $i failed: $($_.Exception.Message)\"; ^
+        Start-Sleep -Seconds 1 ^
+      } ^
+    }; ^
+    if(-not $ok){lg 'ERROR: all copy attempts failed'; exit 1}; ^
+    Remove-Item -Force -Path '${psEscNew}' -EA SilentlyContinue; ^
+    lg 'removed pending file'; ^
+    lg 'launching new exe'; ^
+    Start-Process -FilePath '${psEscOld}'; ^
+    lg 'Start-Process invoked' ^
+  } catch { ^
+    lg \"FATAL: $($_.Exception.Message)\"; ^
+    exit 1 ^
+  }"
+
+echo [%DATE% %TIME%] ps-block exited with code %ERRORLEVEL% >> "%LOGFILE%"
+
+del /F /Q "%~f0" >nul 2>&1
+endlocal
+`;
 
   writeFileSync(helperPath, script, { encoding: 'utf8' });
   return helperPath;

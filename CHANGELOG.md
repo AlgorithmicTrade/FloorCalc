@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-05-07
+
+### Fixed
+
+- **Updater**: исправлен запуск helper-процесса обновления — приложение больше не закрывается без последующего запуска новой версии.
+
+  Решение:
+  - Корневая причина: `spawn('powershell.exe', ..., { detached: true })` не даёт полного отделения от родительского Windows job-object. Electron при старте дочернего процесса может добавить его в свой job-object, и PowerShell (.NET-runtime) наследует job-membership, из-за чего child убивается вместе с родителем при `app.quit()`, не оставляя никаких следов (лог-файл не создавался).
+  - Решение: переход с `powershell.exe -File helper.ps1` на `cmd.exe /c start "" /B helper.bat`. `start "" /B` запускает батник в полностью независимом процессе без GUI-окна, разрывая связь с job-object родителя.
+  - Вся логика Copy-Item retry (10 × 1s) и запуска нового exe сохранена внутри bat-файла через `powershell.exe -Command` (inline, без `-File` — не зависит от ExecutionPolicy на уровне файлов).
+  - Добавлен spawn-лог в `%TEMP%\floorcalc-spawn.log`: записывает путь к helper-файлу, успех/ошибку spawn, момент вызова `app.quit()` — видно прямо на стороне Electron без открытия DevTools.
+  - Добавлены `child.on('error')` и `child.on('spawn')` для диагностики: ошибки spawn теперь не теряются молча.
+  - Добавлена пауза 300 мс между `spawn` и `app.quit()` чтобы OS успела выполнить `CreateProcess` до завершения родителя.
+
+  Изменения:
+  - electron/main/updaterHelper.ts:
+    - `writeUpdateHelperScript()`: генерирует `.bat` вместо `.ps1`; wait-loop через `tasklist /FI "PID eq %PID%" | findstr`; Copy-Item retry через `powershell.exe -Command` (inline); лог через `>>` из bat + `Add-Content` из PS-блока.
+  - electron/main/updater.ts:
+    - `installAndRestart()`: spawn заменён на `cmd.exe /c start "" /B <helperPath>`; добавлены `windowsHide:true`, `child.on('error')`, `child.on('spawn')`; добавлен `spawnLogEntry` (append в `%TEMP%\floorcalc-spawn.log`); `await` 300 мс перед `app.quit()`.
+
+  Эффект:
+  - Helper-процесс (bat) гарантированно переживает `app.quit()` — job-object Electron больше не убивает его.
+  - Лог-файл `%TEMP%\floorcalc-update-<uuid>.log` создаётся с первых секунд работы bat-хелпера.
+  - `%TEMP%\floorcalc-spawn.log` отражает результат spawn на стороне Electron (spawn ok / ошибка) сразу при нажатии «Перезапустить и обновить».
+  - После завершения bat portable-exe заменяется на новую версию и запускается автоматически.
+
 ## [1.0.3] - 2026-05-07
 
 ### Fixed

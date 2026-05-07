@@ -1,8 +1,9 @@
 import { app, type BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { UPDATE_CHECK_DELAY_MS } from '@shared/constants.js';
 import { IPC_CHANNELS, type UpdateStatus } from '@shared/ipc-contract.js';
 import { writeUpdateHelperScript } from './updaterHelper.js';
@@ -97,6 +98,16 @@ export class UpdaterService {
       ? portableSource
       : process.execPath;
 
+    const spawnLog = join(tmpdir(), 'floorcalc-spawn.log');
+    const spawnLogEntry = (msg: string) => {
+      try {
+        const stamp = new Date().toISOString();
+        appendFileSync(spawnLog, `[${stamp}] ${msg}\n`, { encoding: 'utf8' });
+      } catch {
+        // не критично — основное обновление важнее лога
+      }
+    };
+
     try {
       const helperPath = writeUpdateHelperScript({
         pid: process.pid,
@@ -104,15 +115,45 @@ export class UpdaterService {
         oldExePath: targetExePath
       });
 
+      spawnLogEntry(`installAndRestart: helperPath=${helperPath}`);
+      spawnLogEntry(`installAndRestart: targetExePath=${targetExePath}`);
+
+      // Запускаем bat через cmd.exe /c start "" /B — единственный надёжный способ
+      // полностью отделиться от родительского Windows job-object на Windows.
+      // spawn('powershell.exe', ..., { detached: true }) НЕ гарантирует отвязки
+      // от job-object, и child может быть убит вместе с Electron при app.quit().
+      // cmd.exe /c start "" /B создаёт действительно независимый процесс.
       const child = spawn(
-        'powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', helperPath],
-        { detached: true, stdio: 'ignore' }
+        'cmd.exe',
+        ['/c', 'start', '', '/B', helperPath],
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsVerbatimArguments: false,
+          windowsHide: true,
+          shell: false
+        }
       );
+
+      child.on('error', (err) => {
+        spawnLogEntry(`spawn error: ${err.message}`);
+      });
+
+      child.on('spawn', () => {
+        spawnLogEntry(`spawn succeeded, child.pid=${child.pid ?? 'unknown'}`);
+      });
+
       child.unref();
 
+      // Небольшая пауза, чтобы cmd.exe успел выполнить start перед завершением
+      // родительского процесса. spawn() — синхронный вызов, но OS нужно время
+      // на CreateProcess. 300 мс достаточно; app.quit() произойдёт позже.
+      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+
+      spawnLogEntry('calling app.quit()');
       app.quit();
     } catch (err) {
+      spawnLogEntry(`installAndRestart catch: ${String(err)}`);
       this.emit({ kind: 'error', message: this.errorMessage(err) });
     }
   }
