@@ -109,24 +109,37 @@ export class UpdaterService {
     };
 
     try {
-      const { vbsPath, batPath } = writeUpdateHelperScript({
+      const batPath = writeUpdateHelperScript({
         pid: process.pid,
         newExePath: this.downloadedFilePath,
         oldExePath: targetExePath
       });
 
-      spawnLogEntry(`installAndRestart: vbsPath=${vbsPath}`);
       spawnLogEntry(`installAndRestart: batPath=${batPath}`);
       spawnLogEntry(`installAndRestart: targetExePath=${targetExePath}`);
 
-      // Запускаем VBS через wscript.exe. wscript использует GUI subsystem (не console),
-      // поэтому при запуске не возникает мерцания cmd-окна. VBS вызывает
-      // `WScript.Shell.Run("cmd /c bat", 0, False)` — `0` означает hidden window —
-      // и тут же возвращается, оставляя bat работать в фоне.
-      // Это полностью отрывает helper от Windows job-object Electron'а.
+      // Запускаем bat через powershell.exe -WindowStyle Hidden + Start-Process с -WindowStyle Hidden.
+      // Раньше использовался wscript.exe + .vbs — но Windows Script Host отключён по
+      // умолчанию на части Windows 10/11 систем (Defender ASR / GroupPolicy / 24H2),
+      // и wscript падает с «Отсутствует исполняющее ядро для расширения .vbs».
+      // PowerShell 5.1 встроен во все Windows 10/11 без установки → надёжный launcher.
+      // PS используется только как hidden-launcher — никакой логики обновления внутри PS,
+      // вся бизнес-логика в самом bat'е.
+      // Start-Process с CreateProcess создаёт независимый процесс, не зависящий от
+      // job-object Electron'а — bat переживает app.quit().
+      // Экранирование `'` в PS single-quoted strings: `'` → `''`.
+      const psBatEsc = batPath.replace(/'/g, "''");
+      const psCommand = `Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '${psBatEsc}') -WindowStyle Hidden`;
+
       const child = spawn(
-        'wscript.exe',
-        [vbsPath],
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy', 'Bypass',
+          '-WindowStyle', 'Hidden',
+          '-Command', psCommand
+        ],
         {
           detached: true,
           stdio: 'ignore',
@@ -145,9 +158,9 @@ export class UpdaterService {
 
       child.unref();
 
-      // Небольшая пауза, чтобы wscript успел вызвать Shell.Run до завершения родителя.
-      // spawn() — синхронный, но OS нужно время на CreateProcess.
-      await new Promise<void>((resolve) => setTimeout(resolve, 300));
+      // Пауза, чтобы PowerShell успел вызвать Start-Process до завершения родителя.
+      // PS медленнее cmd на старте (~200 мс), 500 мс с запасом.
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
       spawnLogEntry('calling app.quit()');
       app.quit();

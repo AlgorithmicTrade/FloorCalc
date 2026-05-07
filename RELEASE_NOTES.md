@@ -2,6 +2,17 @@
 
 User-facing release notes for all versions.
 
+## v1.0.7
+
+_Released on 2026-05-07_
+
+### Bug Fix
+
+- Исправлено падение обновления с ошибкой `Windows Script Host — Отсутствует исполняющее ядро для расширения имени файла ".vbs"`. На части Windows 10/11 систем Windows Script Host отключён по умолчанию (Defender ASR / GroupPolicy / будет deprecated в Win11 24H2), и `.vbs`-launcher из v1.0.6 не выполнялся.
+- VBS заменён на PowerShell 5.1 (встроен во все Windows 10/11 без установки). PowerShell используется только как launcher для скрытого запуска cmd — вся логика обновления остаётся в нативном cmd-bat.
+- Принцип «работа без установки доп. софта на Windows 10/11» полностью соблюдён: используются только встроенные `cmd.exe` и `powershell.exe`.
+- Скрытие cmd-окна, переименование файла после обновления и устранение «The batch file cannot be found» из v1.0.6 сохранены.
+
 ## v1.0.6
 
 _Released on 2026-05-07_

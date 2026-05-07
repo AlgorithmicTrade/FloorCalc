@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-05-07
+
+### Fixed
+
+- **Updater**: убран VBS-launcher — на Windows 10/11 c отключённым Windows Script Host обновление падало с ошибкой `Отсутствует исполняющее ядро для расширения имени файла ".vbs"`.
+
+  Решение:
+  - В v1.0.6 helper запускался через `wscript.exe vbs` чтобы скрыть cmd-окно. Но на части Windows 10/11 систем Windows Script Host (WSH) отключён через Defender ASR rules, GroupPolicy, или будет deprecated в Windows 11 24H2. На таких системах `wscript.exe` либо отсутствует, либо отказывается выполнять `.vbs` → обновление полностью ломается.
+  - Принцип проекта: работа на Windows 10/11 без установки доп. софта. WSH этому не соответствует.
+  - VBS заменён на **PowerShell 5.1**, который **встроен во все Windows 10/11 без исключений** (часть Windows-as-a-Service). PS используется ТОЛЬКО как hidden-launcher для cmd — никакой логики обновления внутри PS:
+    ```
+    powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden
+      -Command "Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '<bat>') -WindowStyle Hidden"
+    ```
+  - `-WindowStyle Hidden` на самом PS-процессе скрывает окно при его старте.
+  - `Start-Process … -WindowStyle Hidden` использует Win32 `CreateProcess` с `STARTUPINFO.wShowWindow = SW_HIDE` — cmd запускается полностью без окна.
+  - `Start-Process` создаёт независимый процесс, не зависящий от job-object Electron — bat переживает `app.quit()`.
+  - Вся бизнес-логика обновления (wait-loop, copy retry, rename, start, self-clean) остаётся в чистом cmd-bat (без PowerShell-вставок), поэтому проблем с экранированием/continuation у v1.0.4 больше не повторится.
+  - Пауза между spawn и `app.quit()` увеличена с 300 до 500 мс — PS стартует медленнее cmd (~200 мс), страховка.
+
+  Изменения:
+  - electron/main/updaterHelper.ts:
+    - `writeUpdateHelperScript()` снова возвращает `string` (только batPath) — VBS больше не генерируется.
+    - Из bat убран `del /F /Q "%VBSFILE%"` (нет vbs).
+    - Логика wait-loop, copy retry, rename, self-clean (`(goto) 2>nul & del`) сохранена без изменений.
+  - electron/main/updater.ts:
+    - `installAndRestart()` принимает `string` (batPath) от helper'а вместо `{ vbsPath, batPath }`.
+    - spawn заменён с `wscript.exe [vbsPath]` на `powershell.exe ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', '<Start-Process command>']`.
+    - PS-команда: `Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '<bat>') -WindowStyle Hidden`. Экранирование `'` в bat-пути → `''` для PS single-quoted строк.
+    - Пауза перед `app.quit()` 300 → 500 мс.
+  - package.json:
+    - `version`: `1.0.6` → `1.0.7`.
+  - package-lock.json:
+    - top-level и `packages[""]` `version`: `1.0.6` → `1.0.7`.
+  - CHANGELOG.md, RELEASE_NOTES.md:
+    - Раздел `1.0.7`.
+
+  Эффект:
+  - Обновление работает на Windows 10/11 с отключённым WSH (по умолчанию или через GP).
+  - Никаких внешних зависимостей кроме PowerShell 5.1 и cmd, оба встроены в Windows 10/11.
+  - Скрытие окна сохранено: PS hidden + Start-Process hidden — cmd вообще не видно.
+  - Имя файла после обновления переименовывается в актуальную версию (логика 1.0.6 сохранена).
+  - `(goto) 2>nul & del` устраняет «The batch file cannot be found» (логика 1.0.6 сохранена).
+
 ## [1.0.6] - 2026-05-07
 
 ### Improved

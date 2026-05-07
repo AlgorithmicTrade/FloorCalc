@@ -9,52 +9,37 @@ export interface UpdateHelperOptions {
   oldExePath: string; // путь к исходному portable.exe (PORTABLE_EXECUTABLE_FILE)
 }
 
-export interface UpdateHelperResult {
-  /** Путь к VBS-launcher'у, который надо передать в `wscript.exe` (через spawn). */
-  vbsPath: string;
-  /** Путь к bat-файлу обновления (полезен для логов и диагностики). */
-  batPath: string;
-}
-
 /**
- * Записывает пару файлов: bat с логикой обновления + vbs-launcher для скрытого запуска.
+ * Записывает bat-файл обновления и возвращает его путь.
  *
- * Зачем VBS:
- *   `wscript.exe` использует GUI subsystem (не console) → при запуске не показывает окно.
- *   Внутри vbs `WScript.Shell.Run "cmd /c bat", 0, False` запускает cmd в hidden mode (`0`).
- *   spawn cmd напрямую — даже с `windowsHide: true` — иногда оставляет промельк console-окна,
- *   потому что `cmd.exe /c start ...` физически создаёт console на короткий момент.
- *   wscript решает это полностью.
+ * Запуск bat'а в hidden mode выполняется на стороне `updater.ts`:
+ * spawn powershell.exe -WindowStyle Hidden -Command "Start-Process cmd /c <bat> -WindowStyle Hidden".
+ * Раньше использовался wscript+vbs, но Windows Script Host отключён по умолчанию на части
+ * систем (Defender ASR / GroupPolicy / 24H2 deprecation), поэтому WSH ненадёжен.
+ * PowerShell 5.1 встроен во все Windows 10/11 без установки → надёжный launcher.
  *
  * Логика bat:
  *   1. Wait-loop: `tasklist /FI "PID eq %PID%" | findstr FloorCalc.exe` пока родитель жив.
- *   2. Copy retry-loop: `copy /Y "%NEWEXE%" "%OLDEXE%"` до 10 раз с паузой 1 sec — на случай AV/indexer-локов.
- *   3. Rename: если имя pending-exe (`FloorCalc-1.0.6-portable.exe`) отличается от текущего
- *      имени старого (`FloorCalc-0.2.0-portable.exe`), переименовываем — чтобы файл в release/
- *      отражал актуальную версию.
+ *   2. Copy retry-loop: `copy /Y "%NEWEXE%" "%OLDEXE%"` до 10 раз с паузой 1 sec.
+ *   3. Rename: если имя pending-exe (`FloorCalc-1.0.7-portable.exe`) отличается от старого
+ *      (`FloorCalc-0.2.0-portable.exe`), переименовываем — чтобы файл в release/ отражал
+ *      актуальную версию.
  *   4. Удаление pending-exe.
  *   5. `start "" "%FINALEXE%"` — детачнутый запуск новой версии.
- *   6. Удаление vbs.
- *   7. `(goto) 2>nul & del "%~f0"` — стандартный трюк self-deleting bat без сообщения
- *      "The batch file cannot be found": `(goto)` без метки прерывает парсинг блока,
- *      del выполняется как post-batch action; cmd не пытается прочитать строку после del.
+ *   6. `(goto) 2>nul & del "%~f0"` — стандартный трюк self-deleting bat без сообщения
+ *      "The batch file cannot be found".
  *
- * Файлы пишутся с CRLF — обязательное требование cmd.exe для надёжной работы.
+ * Файл пишется с CRLF — обязательное требование cmd.exe для надёжной работы.
  */
-export function writeUpdateHelperScript(opts: UpdateHelperOptions): UpdateHelperResult {
+export function writeUpdateHelperScript(opts: UpdateHelperOptions): string {
   const uuid = randomUUID();
   const batPath = join(tmpdir(), `floorcalc-update-${uuid}.bat`);
-  const vbsPath = join(tmpdir(), `floorcalc-update-${uuid}.vbs`);
   const logPath = join(tmpdir(), `floorcalc-update-${uuid}.log`);
 
   // Внутри `set "VAR=..."` cmd экранирует `"` как `""`.
   const escNewBat = opts.newExePath.replace(/"/g, '""');
   const escOldBat = opts.oldExePath.replace(/"/g, '""');
   const escLogBat = logPath.replace(/"/g, '""');
-  const escVbsBat = vbsPath.replace(/"/g, '""');
-
-  // VBS-string внутри двойных кавычек экранирует `"` как `""`.
-  const escBatVbs = batPath.replace(/"/g, '""');
 
   const PARENT_IMAGE = 'FloorCalc.exe';
 
@@ -66,7 +51,6 @@ export function writeUpdateHelperScript(opts: UpdateHelperOptions): UpdateHelper
     `set "LOGFILE=${escLogBat}"`,
     `set "NEWEXE=${escNewBat}"`,
     `set "OLDEXE=${escOldBat}"`,
-    `set "VBSFILE=${escVbsBat}"`,
     `set "PID=${opts.pid}"`,
     '',
     'rem Извлекаем имена и директорию для последующего rename',
@@ -111,7 +95,7 @@ export function writeUpdateHelperScript(opts: UpdateHelperOptions): UpdateHelper
     '',
     ':copydone',
     'rem Если имя pending-exe отличается от старого — переименуем, чтобы release/',
-    'rem отражал актуальную версию (FloorCalc-1.0.6-portable.exe вместо 0.2.0).',
+    'rem отражал актуальную версию (FloorCalc-1.0.7-portable.exe вместо 0.2.0).',
     'if /I not "!NEWNAME!" == "!OLDNAME!" (',
     '  ren "%OLDEXE%" "!NEWNAME!" >nul 2>>"%LOGFILE%"',
     '  if !ERRORLEVEL! == 0 (',
@@ -132,8 +116,7 @@ export function writeUpdateHelperScript(opts: UpdateHelperOptions): UpdateHelper
     'echo [%DATE% %TIME%] start invoked, errorlevel=!ERRORLEVEL! >> "%LOGFILE%"',
     '',
     ':cleanup',
-    'del /F /Q "%VBSFILE%" >nul 2>&1',
-    'echo [%DATE% %TIME%] vbs removed, exiting >> "%LOGFILE%"',
+    'echo [%DATE% %TIME%] exiting >> "%LOGFILE%"',
     'rem (goto) без метки прерывает парсинг блока — устраняет "The batch file cannot be found"',
     '(goto) 2>nul & del /F /Q "%~f0"',
     ''
@@ -141,18 +124,6 @@ export function writeUpdateHelperScript(opts: UpdateHelperOptions): UpdateHelper
 
   const batScript = batLines.join('\r\n');
 
-  // VBS-launcher: запускает `cmd /c "<batPath>"` с windowStyle=0 (hidden), без ожидания.
-  // VBS экранирует `"` внутри строк как `""`. Целевая строка-аргумент: `cmd /c "<batPath>"`,
-  // в VBS это: `"cmd /c ""<batPath>"""` (open, `cmd /c `, escape, `"`, path, escape, `"`, close).
-  const vbsLines = [
-    'Set objShell = CreateObject("WScript.Shell")',
-    `objShell.Run "cmd /c ""${escBatVbs}""", 0, False`,
-    ''
-  ];
-  const vbsScript = vbsLines.join('\r\n');
-
   writeFileSync(batPath, batScript, { encoding: 'utf8' });
-  writeFileSync(vbsPath, vbsScript, { encoding: 'utf8' });
-
-  return { vbsPath, batPath };
+  return batPath;
 }
