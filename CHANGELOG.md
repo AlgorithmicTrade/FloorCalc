@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-07
+
+### Fixed
+
+- **Updater**: исправлена замена portable.exe при `installAndRestart()` — раньше приложение закрывалось и не запускалось обратно на новой версии.
+
+  Решение:
+  - В `electron/main/updater.ts:installAndRestart()` использовался `process.execPath` как `oldExePath`. Для portable target этот путь указывает на распакованный во временной папке `%TEMP%/<hash>/FloorCalc.exe`, которая удаляется при `app.quit()`. PowerShell-helper пытался `Move-Item` на уже несуществующую папку → падал с ошибкой → новый exe не запускался.
+  - Теперь используется `process.env.PORTABLE_EXECUTABLE_FILE` (выставляется electron-builder portable bootstrapom при запуске) — путь к **исходному** portable.exe, который пользователь запустил. Этот файл не удаляется при quit, его можно безопасно перезаписать.
+  - Helper-скрипт переписан: `Move-Item` → `Copy-Item` с retry-loop (10 попыток × 1s) на случай anti-virus/indexer-локов; явный `Remove-Item` source после успеха; полное логирование в `%TEMP%/floorcalc-update-<uuid>.log` для диагностики; `$ErrorActionPreference = 'Continue'` + try/catch ловят все ошибки в лог вместо silent fail.
+
+  Изменения:
+  - electron/main/updater.ts:
+    - `installAndRestart()`: `targetExePath = process.env.PORTABLE_EXECUTABLE_FILE ?? process.execPath`.
+  - electron/main/updaterHelper.ts:
+    - `writeUpdateHelperScript()`: новый PS-скрипт с логом, retry-loop для Copy-Item, `Remove-Item` source, try/catch.
+
+  Эффект:
+  - При обновлении portable target: helper заменит исходный `release/FloorCalc-X.Y.Z-portable.exe` (или там, откуда пользователь запустил) на скачанный новый exe → запустит его → portable bootstrapper распакует свежий win-unpacked и стартует.
+  - Лог-файл `%TEMP%\floorcalc-update-*.log` останется на диске после завершения helper (он сам себя удаляет, но лог не трогает) — позволяет диагностировать проблемы с обновлением.
+  - В non-portable окружении (`process.env.PORTABLE_EXECUTABLE_FILE` отсутствует) поведение не меняется — fallback на `process.execPath`.
+
 ## [1.0.2] - 2026-05-07
 
 ### Fixed

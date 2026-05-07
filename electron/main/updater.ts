@@ -88,11 +88,20 @@ export class UpdaterService {
       return;
     }
 
+    // Для portable target electron-builder выставляет PORTABLE_EXECUTABLE_FILE
+    // (путь к исходному portable.exe, который запустил пользователь).
+    // process.execPath указывает на распакованный во временной папке Electron.exe,
+    // которая удаляется при выходе процесса — заменять её бессмысленно.
+    const portableSource = process.env.PORTABLE_EXECUTABLE_FILE;
+    const targetExePath = portableSource && portableSource.length > 0
+      ? portableSource
+      : process.execPath;
+
     try {
       const helperPath = writeUpdateHelperScript({
         pid: process.pid,
         newExePath: this.downloadedFilePath,
-        oldExePath: process.execPath
+        oldExePath: targetExePath
       });
 
       const child = spawn(

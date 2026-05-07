@@ -1,6 +1,6 @@
 {
   "name": "floorcalc",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "description": "FloorCalc — desktop-калькулятор расхода рулонных напольных покрытий",
   "main": "out/main/index.js",
