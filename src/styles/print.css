@@ -1,0 +1,22 @@
+/* Print: только активная схема на белом фоне, A4 landscape. */
+
+@media print {
+  body > *:not(.print-target) {
+    display: none !important;
+  }
+
+  .print-target {
+    background: white !important;
+    color: black !important;
+  }
+
+  .print-target * {
+    background: white !important;
+    color: black !important;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+}

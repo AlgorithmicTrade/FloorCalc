@@ -1,0 +1,11 @@
+.form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-xs);
+  margin-top: var(--space-md);
+}
+
+.field {
+  flex: 1;
+  min-width: 0;
+}

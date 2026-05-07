@@ -1,0 +1,24 @@
+.card {
+  border-radius: var(--r-lg);
+  border: 1px solid rgba(178, 182, 189, 0.1);
+}
+
+.surface1 {
+  background: var(--color-surface-1);
+}
+
+.surface2 {
+  background: var(--color-surface-2);
+}
+
+.padSm {
+  padding: 16px;
+}
+
+.padMd {
+  padding: 20px;
+}
+
+.padLg {
+  padding: 24px;
+}

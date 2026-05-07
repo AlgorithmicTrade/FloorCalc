@@ -1,0 +1,22 @@
+.wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.hasSuffix .suffix {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-ink-subtle);
+  font-size: 14px;
+  font-weight: 500;
+  pointer-events: none;
+}
+
+.inputWithSuffix {
+  /* зарезервировать место под suffix (~28px) */
+  padding-right: 36px;
+}

@@ -1,6 +1,15 @@
 # Dependencies
 node_modules/
 
+# Build artifacts
+out/
+release/
+dist/
+*.tsbuildinfo
+
+# Test coverage
+coverage/
+
 # Upstream orchestrator kit (vendored npm package, обновляется через npm)
 claude-code-orchestrator-kit/
 
@@ -24,3 +33,4 @@ Thumbs.db
 .claude/hooks/__pycache__/
 .claude/hooks/beads-sync-trigger.log
 .claude/worktrees/
+docs/plans/agile-prancing-pnueli.md

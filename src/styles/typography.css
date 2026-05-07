@@ -1,0 +1,104 @@
+/* Typography — Inter Variable bundled locally.
+ * line-heights уменьшены на ~0.02 относительно DESIGN.md (Inter substitute correction).
+ * Веса 500 (body) / 600 (emphasis) / 700 (display). */
+
+@font-face {
+  font-family: 'Inter';
+  src: url('../../resources/fonts/InterVariable.woff2') format('woff2-variations'),
+       url('../../resources/fonts/InterVariable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  /* Inter alternates: cv11 (single-storey a), ss01 (open digits) — improves readability at body size */
+  font-feature-settings: 'cv11', 'ss01';
+}
+
+/* Display & headings */
+.t-display-xl {
+  font-size: 80px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -2.5px;
+}
+
+.t-display-lg {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.16;
+  letter-spacing: -1.6px;
+}
+
+.t-display-md {
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.17;
+  letter-spacing: -1.0px;
+}
+
+.t-headline {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.19;
+  letter-spacing: -0.6px;
+}
+
+.t-card-title {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.16;
+  letter-spacing: -0.4px;
+}
+
+.t-subhead {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.33;
+  letter-spacing: -0.2px;
+}
+
+/* Body */
+.t-body-lg {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.67;
+}
+
+.t-body {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.48;
+}
+
+.t-body-sm {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.69;
+}
+
+.t-caption {
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.36;
+  letter-spacing: 0.2px;
+}
+
+/* Buttons & utilities */
+.t-button {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.27;
+}
+
+.t-eyebrow {
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.21;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}

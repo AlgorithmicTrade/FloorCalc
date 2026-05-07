@@ -1,0 +1,21 @@
+.shell {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  min-height: 100vh;
+  background: var(--color-canvas);
+}
+
+.left {
+  border-right: 1px solid var(--color-hairline-soft);
+  padding: var(--space-lg);
+  overflow-y: auto;
+  background: var(--color-surface-1);
+}
+
+.right {
+  padding: var(--space-lg);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}

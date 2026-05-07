@@ -1,0 +1,28 @@
+appId: com.algorithmictrade.floorcalc
+productName: FloorCalc
+copyright: Copyright (c) 2026 AlgorithmicTrade
+directories:
+  output: release
+  buildResources: resources
+files:
+  - out/**/*
+  - resources/fonts/**
+  - package.json
+asar: true
+compression: maximum
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  artifactName: FloorCalc-${version}-portable.${ext}
+portable:
+  artifactName: FloorCalc-${version}-portable.${ext}
+  unpackDirName: false
+publish:
+  - provider: github
+    owner: AlgorithmicTrade
+    repo: FloorCalc
+    releaseType: release
+    vPrefixedTagName: true
+electronVersion: 32.2.7
