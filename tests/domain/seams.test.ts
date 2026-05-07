@@ -1,9 +1,9 @@
 /**
- * Тесты подсчёта длины швов.
+ * Тесты подсчёта швов.
  */
 
 import { describe, expect, it } from 'vitest';
-import { computeSeamLength } from '../../src/domain/calculator/seams';
+import { computeSeamLength, computeSeamCount } from '../../src/domain/calculator/seams';
 import type { Piece, Room } from '../../src/domain/types';
 import { createRoom } from './fixtures';
 
@@ -79,5 +79,51 @@ describe('computeSeamLength', () => {
     // Продольный: 1 граница (x=4000) × room.length 5000 = 5000.
     // Поперечные: 2 шва × ширина 4000 = 8000.
     expect(computeSeamLength(pieces, room)).toBe(5000 + 8000);
+  });
+});
+
+describe('computeSeamCount', () => {
+  it('returns 0 for empty pieces', () => {
+    const room: Room = createRoom('r', 5, 3);
+    expect(computeSeamCount([], room)).toBe(0);
+  });
+
+  it('returns 0 for single piece', () => {
+    const room: Room = createRoom('r', 5, 3);
+    const pieces = [piece(0, 0, 0, 5000, 3000)];
+    expect(computeSeamCount(pieces, room)).toBe(0);
+  });
+
+  it('counts 2 longitudinal seams for 3 strips', () => {
+    // 3 полосы → 2 уникальных placedAtX > 0 → 2 продольных шва.
+    const room: Room = createRoom('big', 10, 5);
+    const pieces = [
+      piece(0, 0, 0, 4000, 5000),
+      piece(1, 4000, 0, 4000, 5000),
+      piece(2, 8000, 0, 2000, 5000)
+    ];
+    expect(computeSeamCount(pieces, room)).toBe(2);
+  });
+
+  it('counts 1 transverse seam for 2-piece strip', () => {
+    const room: Room = createRoom('long', 4, 5);
+    const pieces = [
+      piece(0, 0, 0, 4000, 3000),
+      piece(0, 0, 3000, 4000, 2000)
+    ];
+    // Одна пара соседних pieces в колонке → 1 поперечный шов.
+    expect(computeSeamCount(pieces, room)).toBe(1);
+  });
+
+  it('combines longitudinal and transverse: 2 strips × 2 pieces each → 1 + 2 = 3', () => {
+    // 2 полосы (1 продольный шов) + 2 поперечных шва (добор в каждой полосе) = 3.
+    const room: Room = createRoom('combo', 8, 5);
+    const pieces = [
+      piece(0, 0, 0, 4000, 3000),
+      piece(0, 0, 3000, 4000, 2000),
+      piece(1, 4000, 0, 4000, 3000),
+      piece(1, 4000, 3000, 4000, 2000)
+    ];
+    expect(computeSeamCount(pieces, room)).toBe(3);
   });
 });

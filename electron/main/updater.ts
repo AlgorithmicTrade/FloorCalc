@@ -1,11 +1,22 @@
 import { app, type BrowserWindow } from 'electron';
 import electronUpdater from 'electron-updater';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { UPDATE_CHECK_DELAY_MS } from '@shared/constants.js';
 import { IPC_CHANNELS, type UpdateStatus } from '@shared/ipc-contract.js';
 import { writeUpdateHelperScript } from './updaterHelper.js';
 
 const { autoUpdater } = electronUpdater;
+
+/**
+ * `app-update.yml` генерируется electron-builder только при `--publish always`.
+ * Локальная portable-сборка без публикации запускается без этого файла —
+ * autoUpdater.checkForUpdates() в этом случае бросает ENOENT. Игнорируем.
+ */
+function isUpdateConfigPresent(): boolean {
+  return existsSync(join(process.resourcesPath, 'app-update.yml'));
+}
 
 export class UpdaterService {
   private readonly mainWindow: BrowserWindow;
@@ -23,6 +34,11 @@ export class UpdaterService {
 
     if (!app.isPackaged) {
       console.log('[updater] disabled in dev mode');
+      return;
+    }
+
+    if (!isUpdateConfigPresent()) {
+      console.log('[updater] disabled: app-update.yml not found (unpublished build)');
       return;
     }
 
@@ -44,6 +60,7 @@ export class UpdaterService {
       console.log('[updater] check ignored in dev mode');
       return;
     }
+    if (!isUpdateConfigPresent()) return;
     try {
       this.emit({ kind: 'checking' });
       await autoUpdater.checkForUpdates();
@@ -57,6 +74,7 @@ export class UpdaterService {
       console.log('[updater] download ignored in dev mode');
       return;
     }
+    if (!isUpdateConfigPresent()) return;
     try {
       await autoUpdater.downloadUpdate();
     } catch (err) {

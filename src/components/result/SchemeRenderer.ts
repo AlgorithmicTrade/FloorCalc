@@ -8,10 +8,20 @@
  *
  * Палитра scheme-roll-* живёт в tokens.css как CSS-переменные, но Konva
  * читает только литеральные строки — поэтому palette продублирована тут.
+ *
+ * Под схемой — две строки статистики:
+ *  1) общая: rollsUsed · seamCount · wasteAreaMm2;
+ *  2) детальная: «WxL — N шт.» по каждому типоразмеру использованных рулонов.
+ * Обе строки попадают в PNG/PDF/print экспорт. Warnings выводятся в HTML-tooltip
+ * рядом с заголовком режима (см. ResultCard) — в схеме их нет.
+ *
+ * Размеры самих кусков не отображаются как подписи на схеме (по UX-решению):
+ * визуально показывается только номер рулона. Детальные размеры доступны в
+ * HTML-tooltip при hover (см. SchemeView.computeTooltipLines).
  */
 
-import type { CalculationResult, Room } from '@/domain/types';
-import { formatM } from '@/domain/units';
+import type { CalculationResult, Room, RollType } from '@/domain/types';
+import { formatMTrim, formatAreaTrim } from '@/domain/units';
 
 export type SchemeNode =
   | { kind: 'roomFrame'; x: number; y: number; width: number; height: number }
@@ -23,6 +33,8 @@ export type SchemeNode =
       height: number;
       fill: string;
       rollIndex: number;
+      /** Уникальный идентификатор куска — используется для группировки в SchemeView. */
+      pieceId: string;
     }
   | { kind: 'roomLabel'; x: number; y: number; text: string }
   | {
@@ -32,6 +44,35 @@ export type SchemeNode =
       width: number;
       height: number;
       text: string;
+      fontSize: number;
+      /** Идентификатор куска, к которому относится подпись. */
+      pieceId: string;
+    }
+  | {
+      kind: 'statsRow';
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      text: string;
+      fontSize: number;
+      bold: boolean;
+    }
+  | {
+      /** Цветной квадратик типоразмера во второй строке статистики. */
+      kind: 'statsItemSwatch';
+      x: number;
+      y: number;
+      size: number;
+      fill: string;
+    }
+  | {
+      /** Текст ячейки типоразмера во второй строке статистики. */
+      kind: 'statsItemText';
+      x: number;
+      y: number;
+      text: string;
+      fontSize: number;
     };
 
 export interface SchemeLayout {
@@ -50,18 +91,28 @@ export const SCHEME_PALETTE = [
   '#1868f2',
 ] as const;
 
-const MARGIN = 40;             // отступ для размерных подписей со всех сторон
+/** Цвет типоразмера рулона по его позиции в КАТАЛОГЕ (стабилен между расчётами). */
+export function getRollTypeColor(
+  rollId: string,
+  catalog: ReadonlyArray<{ id: string }>
+): string {
+  const idx = catalog.findIndex((r) => r.id === rollId);
+  const safe = idx >= 0 ? idx : 0;
+  return SCHEME_PALETTE[safe % SCHEME_PALETTE.length] ?? SCHEME_PALETTE[0]!;
+}
+
+const MARGIN = 40;             // отступ для размерных подписей сверху/слева/справа
+const STATS_LINE_HEIGHT = 22;  // высота одной строки статистики
+const STATS_LINES = 2;         // 2 строки: общая + детальная по типам
+const STATS_BLOCK_HEIGHT = STATS_LINE_HEIGHT * STATS_LINES;
 const DEFAULT_W = 800;
 const DEFAULT_H = 600;
-
-/** Короткое форматирование числа в метрах без « м» (для подписей внутри схемы). */
-function shortM(mm: number): string {
-  return (mm / 1000).toFixed(2);
-}
 
 export function renderScheme(
   result: CalculationResult,
   room: Room,
+  roll: RollType,
+  catalog: readonly RollType[],
   stageWidth: number = DEFAULT_W,
   stageHeight: number = DEFAULT_H,
 ): SchemeLayout {
@@ -73,17 +124,18 @@ export function renderScheme(
     return { stageWidth, stageHeight, nodes };
   }
 
+  // Зона схемы — весь stage за вычетом нижнего блока статистики.
+  const schemeZoneH = stageHeight - STATS_BLOCK_HEIGHT;
   const innerW = stageWidth - MARGIN * 2;
-  const innerH = stageHeight - MARGIN * 2;
+  const innerH = schemeZoneH - MARGIN * 2;
 
   // Mapping: room.width → ось X сцены, room.length → ось Y сцены.
-  // Так схема рисуется так же, как пользователь видит план помещения сверху.
   const scale = Math.min(innerW / room.width, innerH / room.length);
 
   const roomPxW = room.width * scale;
   const roomPxH = room.length * scale;
 
-  // Центрируем помещение в inner-области сцены.
+  // Центрируем помещение в inner-области зоны схемы.
   const offsetX = MARGIN + (innerW - roomPxW) / 2;
   const offsetY = MARGIN + (innerH - roomPxH) / 2;
 
@@ -96,13 +148,17 @@ export function renderScheme(
     height: roomPxH,
   });
 
-  // Pieces — каждый кусок, цвет по rollIndex (один цвет = один рулон).
+  // === Pieces ===
+  // Цвет каждого куска — по его собственному rollTypeId (поддержка mixed-type укладки).
+  // При mono-type все куски одного цвета; при mixed — каждый тип своим цветом из палитры.
   for (const p of result.pieces) {
     const x = offsetX + p.placedAtX * scale;
     const y = offsetY + p.placedAtY * scale;
     const w = p.width * scale;
     const h = p.length * scale;
-    const fill = SCHEME_PALETTE[p.rollIndex % SCHEME_PALETTE.length] ?? SCHEME_PALETTE[0]!;
+    const pieceFill = getRollTypeColor(p.rollTypeId, catalog);
+    // Стабильный ID куска: rollTypeId + позиция укладки.
+    const pieceId = `${p.rollTypeId}-${p.placedAtX}-${p.placedAtY}`;
 
     nodes.push({
       kind: 'piece',
@@ -110,36 +166,123 @@ export function renderScheme(
       y,
       width: w,
       height: h,
-      fill,
+      fill: pieceFill,
       rollIndex: p.rollIndex,
+      pieceId,
     });
 
-    // Подпись внутри куска — только если он достаточно крупный, чтобы текст помещался.
-    if (w >= 60 && h >= 24) {
+    // Номер рулона (1-based). На схеме отображается только он —
+    // размеры кусков не показываются как подписи (доступны в hover-tooltip).
+    const showPieceLabel = w >= 14 && h >= 14;
+    if (showPieceLabel) {
+      const pieceLabelFontSize = h < 30 ? 9 : h < 60 ? 13 : 16;
       nodes.push({
         kind: 'pieceLabel',
         x,
         y,
         width: w,
         height: h,
-        text: `${shortM(p.width)} × ${shortM(p.length)}`,
+        text: String(p.rollIndex + 1),
+        fontSize: pieceLabelFontSize,
+        pieceId,
       });
     }
   }
 
-  // Размер ширины (сверху по центру) и длины (слева по центру).
+  // Размер ширины помещения (сверху по центру) и длины (слева по центру).
   nodes.push({
     kind: 'roomLabel',
     x: offsetX + roomPxW / 2 - 30,
     y: offsetY - 22,
-    text: formatM(room.width),
+    text: formatMTrim(room.width),
   });
   nodes.push({
     kind: 'roomLabel',
     x: offsetX - 36,
     y: offsetY + roomPxH / 2 - 8,
-    text: formatM(room.length),
+    text: formatMTrim(room.length),
   });
+
+  // === Stats: 2 строки ===
+  // Строка 1 — общие метрики (один statsRow, bold).
+  const summaryText =
+    `Рулонов: ${result.rollsUsed}    Кусков: ${result.pieces.length} шт.    ` +
+    `Обрезки: ${formatAreaTrim(result.wasteAreaMm2)}`;
+
+  nodes.push({
+    kind: 'statsRow',
+    x: 0,
+    y: schemeZoneH,
+    width: stageWidth,
+    height: STATS_LINE_HEIGHT,
+    text: summaryText,
+    fontSize: 13,
+    bold: true,
+  });
+
+  // Строка 2 — разбивка по типоразмерам: цветной квадратик + текст для каждого типа.
+  // Группировка piece по rollTypeId; счёт уникальных rollIndex = число физических
+  // рулонов данного типа.
+  const byType = new Map<string, Set<number>>();
+  for (const p of result.pieces) {
+    if (!byType.has(p.rollTypeId)) byType.set(p.rollTypeId, new Set<number>());
+    byType.get(p.rollTypeId)!.add(p.rollIndex);
+  }
+
+  const DETAIL_FONT_SIZE = 12;
+  const SWATCH_SIZE = 10;
+  // Вертикальный центр строки 2 для выравнивания квадратика.
+  const row2Y = schemeZoneH + STATS_LINE_HEIGHT;
+  const swatchOffsetY = (STATS_LINE_HEIGHT - SWATCH_SIZE) / 2;
+  // Приблизительная ширина символа: 0.55 * fontSize.
+  const CHAR_WIDTH = DETAIL_FONT_SIZE * 0.55;
+  // Зазор между квадратиком и текстом, между ячейками.
+  const SWATCH_TEXT_GAP = 4;
+  const CELL_GAP = 16;
+
+  // Первый проход — вычислить суммарную ширину всех ячеек для центровки.
+  type DetailCell = { rollTypeId: string; text: string };
+  const detailCells: DetailCell[] = [];
+  for (const [rollTypeId, indices] of byType) {
+    const r = catalog.find((rt) => rt.id === rollTypeId);
+    if (!r) continue;
+    const text = `${formatMTrim(r.width)} × ${formatMTrim(r.length)} — ${indices.size} шт.`;
+    detailCells.push({ rollTypeId, text });
+  }
+
+  if (detailCells.length > 0) {
+    // Суммарная ширина: каждая ячейка = swatch + gap + текст; между ячейками — CELL_GAP.
+    const totalWidth =
+      detailCells.reduce(
+        (sum, cell) => sum + SWATCH_SIZE + SWATCH_TEXT_GAP + cell.text.length * CHAR_WIDTH,
+        0,
+      ) +
+      (detailCells.length - 1) * CELL_GAP;
+
+    let curX = (stageWidth - totalWidth) / 2;
+
+    for (const cell of detailCells) {
+      const swatchFill = getRollTypeColor(cell.rollTypeId, catalog);
+      nodes.push({
+        kind: 'statsItemSwatch',
+        x: curX,
+        y: row2Y + swatchOffsetY,
+        size: SWATCH_SIZE,
+        fill: swatchFill,
+      });
+      curX += SWATCH_SIZE + SWATCH_TEXT_GAP;
+
+      const textWidth = cell.text.length * CHAR_WIDTH;
+      nodes.push({
+        kind: 'statsItemText',
+        x: curX,
+        y: row2Y,
+        text: cell.text,
+        fontSize: DETAIL_FONT_SIZE,
+      });
+      curX += textWidth + CELL_GAP;
+    }
+  }
 
   return { stageWidth, stageHeight, nodes };
 }

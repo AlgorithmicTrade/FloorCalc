@@ -1,6 +1,6 @@
 .shell {
   display: grid;
-  grid-template-columns: 380px 1fr;
+  grid-template-columns: 400px 1fr;
   min-height: 100vh;
   background: var(--color-canvas);
 }
@@ -15,6 +15,13 @@
 .right {
   padding: var(--space-lg);
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* Вертикальная колонка с компонентами в левой панели. */
+.leftColumn {
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);

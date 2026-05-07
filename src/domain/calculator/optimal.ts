@@ -10,7 +10,7 @@
  */
 
 import type { CalculationResult, Piece, RollType, Room } from '../types';
-import { computeSeamLength } from './seams';
+import { computeSeamCount } from './seams';
 import { planStrips } from './strip';
 
 export function calculateOptimal(room: Room, roll: RollType): CalculationResult {
@@ -20,7 +20,7 @@ export function calculateOptimal(room: Room, roll: RollType): CalculationResult 
       roomId: room.id,
       rollTypeId: roll.id,
       rollsUsed: 0,
-      totalSeamLengthMm: 0,
+      seamCount: 0,
       pieces: [],
       wasteAreaMm2: 0,
       warnings: ['Помещение не задано'],
@@ -80,14 +80,14 @@ export function calculateOptimal(room: Room, roll: RollType): CalculationResult 
   const totalRollArea = rollsUsed * roll.width * roll.length;
   const wasteAreaMm2 = totalRollArea - coveredArea;
 
-  const totalSeamLengthMm = computeSeamLength(pieces, room);
+  const seamCount = computeSeamCount(pieces, room);
 
   return {
     mode: 'optimal',
     roomId: room.id,
     rollTypeId: roll.id,
     rollsUsed,
-    totalSeamLengthMm,
+    seamCount,
     pieces,
     wasteAreaMm2,
     warnings,

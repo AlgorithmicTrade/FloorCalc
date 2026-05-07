@@ -11,6 +11,14 @@
   background: var(--color-surface-2);
 }
 
+.swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
 .size {
   flex: 1;
   color: var(--color-ink);

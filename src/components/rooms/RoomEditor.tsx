@@ -1,5 +1,5 @@
 /**
- * Редактор активного помещения: имя + ширина (поперёк рулона) + длина (вдоль рулона).
+ * Редактор активного помещения: имя + ширина + длина.
  * Кнопка удаления отображается только если в store больше одного помещения
  * (последнее не даём удалить — UX иначе странный).
  */
@@ -50,7 +50,7 @@ export function RoomEditor() {
         </div>
         <div className={styles.dimensions}>
           <label className={styles.label}>
-            <span>Ширина (поперёк рулона)</span>
+            <span className={styles.labelText}>Ширина</span>
             <NumberField
               aria-label="Ширина помещения, м"
               valueMm={activeRoom.width}
@@ -61,7 +61,7 @@ export function RoomEditor() {
             />
           </label>
           <label className={styles.label}>
-            <span>Длина (вдоль рулона)</span>
+            <span className={styles.labelText}>Длина</span>
             <NumberField
               aria-label="Длина помещения, м"
               valueMm={activeRoom.length}

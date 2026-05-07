@@ -1,22 +1,27 @@
 /**
- * Правая основная панель: редактор активного помещения + две карточки
- * результатов (economy + optimal).
+ * Правая основная панель: две карточки результатов (economy + optimal).
+ *
+ * Редактор помещения (`RoomEditor`) перенесён в левую колонку (`App.tsx`),
+ * поэтому здесь только условный вывод результатов или EmptyState.
  *
  * Если у активного помещения не заданы размеры (width=0 || length=0) —
  * вместо ResultCard'ов показываем EmptyState.
  */
 
+import { useShallow } from 'zustand/shallow';
 import { useRoomsStore, selectActiveRoom } from '@/store/roomsStore';
 import { useCatalogStore, selectActiveRolls } from '@/store/catalogStore';
 import { Card } from '@/components/design-system/Card';
 import { EmptyState } from '@/components/layout/EmptyState';
-import { RoomEditor } from './RoomEditor';
 import { ResultCard } from '@/components/result/ResultCard';
 import styles from './RoomResultPanel.module.css';
 
 export function RoomResultPanel() {
   const activeRoom = useRoomsStore(selectActiveRoom);
-  const activeRolls = useCatalogStore(selectActiveRolls);
+  // useShallow обязателен: selectActiveRolls возвращает новый array каждый вызов
+  // (через .filter), а React 19 + zustand 5 (useSyncExternalStore) на нестабильную
+  // ссылку из getSnapshot выбрасывает Maximum update depth (React error #185).
+  const activeRolls = useCatalogStore(useShallow(selectActiveRolls));
 
   if (!activeRoom) return null;
 
@@ -24,7 +29,6 @@ export function RoomResultPanel() {
 
   return (
     <div className={styles.panel}>
-      <RoomEditor />
       {!hasGeometry ? (
         <Card surface="surface-1" padding="md">
           <EmptyState
@@ -34,8 +38,8 @@ export function RoomResultPanel() {
         </Card>
       ) : (
         <>
-          <ResultCard mode="economy" room={activeRoom} activeRolls={activeRolls} />
           <ResultCard mode="optimal" room={activeRoom} activeRolls={activeRolls} />
+          <ResultCard mode="economy" room={activeRoom} activeRolls={activeRolls} />
         </>
       )}
     </div>

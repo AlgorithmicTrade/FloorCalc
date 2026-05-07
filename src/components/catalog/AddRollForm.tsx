@@ -13,7 +13,7 @@ import { useCatalogStore } from '@/store/catalogStore';
 import styles from './AddRollForm.module.css';
 
 const MIN_MM = 100;       // 0.10 м — минимально осмысленный размер
-const MAX_MM = 10_000;    // 10.00 м — типичный максимум для рулонного покрытия
+const MAX_MM = 100_000;   // 100 м — верхняя граница, аналогичная ROOM_MAX_MM
 
 export function AddRollForm() {
   const addRoll = useCatalogStore((s) => s.addRoll);

@@ -4,15 +4,52 @@
   gap: var(--space-sm);
 }
 
-.split {
-  display: grid;
-  grid-template-columns: minmax(180px, 2fr) minmax(0, 3fr);
-  gap: var(--space-md);
-  align-items: start;
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
 }
 
-@media (max-width: 960px) {
-  .split {
-    grid-template-columns: 1fr;
-  }
+.headerLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.warnMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 50%;
+  color: var(--color-warning, #e8b84b);
+  background: rgba(232, 184, 75, 0.12);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  user-select: none;
+  /* подсказка читается через native title — отдельный popover не нужен */
+}
+
+.warnMark:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* a11y-fallback: скрываем текстовую статистику визуально,
+   т.к. она дублируется внутри Konva stage (попадает в экспорт). */
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }

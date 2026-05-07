@@ -1,13 +1,15 @@
 /**
  * Текстовый breakdown результата расчёта: рулоны / швы / обрезки + warnings.
  *
- * Также экспортирует `formatResultAsPlainText()` — общий serializer для
- * экспорта в PDF, печати и копирования (один и тот же источник истины
- * для текстового представления).
+ * Компонент остаётся в DOM как accessibility-fallback (visually-hidden),
+ * т.к. основная статистика теперь рендерится внутри Konva stage (SchemeView)
+ * и попадает в PNG/PDF/print экспорт.
+ *
+ * `formatResultAsPlainText()` — общий serializer для PDF, печати и копирования.
  */
 
 import type { CalculationResult } from '@/domain/types';
-import { formatM, formatArea } from '@/domain/units';
+import { formatArea } from '@/domain/units';
 import styles from './ResultText.module.css';
 
 export interface ResultTextProps {
@@ -41,8 +43,8 @@ export function ResultText({ result, modeTitle }: ResultTextProps) {
         <span className={`t-body ${styles.value}`}>{result.rollsUsed}</span>
       </div>
       <div className={styles.row}>
-        <span className={`t-body ${styles.label}`}>Стыков:</span>
-        <span className={`t-body ${styles.value}`}>{formatM(result.totalSeamLengthMm)}</span>
+        <span className={`t-body ${styles.label}`}>Кусков:</span>
+        <span className={`t-body ${styles.value}`}>{result.pieces.length} шт.</span>
       </div>
       <div className={styles.row}>
         <span className={`t-body ${styles.label}`}>Обрезки:</span>
@@ -87,7 +89,7 @@ export function formatResultAsPlainText(
   }
 
   lines.push(`Рулонов: ${result.rollsUsed}`);
-  lines.push(`Стыков: ${formatM(result.totalSeamLengthMm)}`);
+  lines.push(`Кусков: ${result.pieces.length} шт.`);
   lines.push(`Обрезки: ${formatArea(result.wasteAreaMm2)}`);
 
   if (result.warnings.length > 0) {

@@ -15,6 +15,7 @@ win:
     - target: portable
       arch:
         - x64
+  icon: resources/icon.ico
   artifactName: FloorCalc-${version}-portable.${ext}
 portable:
   artifactName: FloorCalc-${version}-portable.${ext}

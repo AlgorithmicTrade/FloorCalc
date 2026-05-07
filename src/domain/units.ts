@@ -24,3 +24,21 @@ export const formatM = (mm: number, fractionDigits = 2): string =>
  */
 export const formatArea = (mm2: number, fractionDigits = 2): string =>
   `${(mm2 / 1_000_000).toFixed(fractionDigits)} м²`;
+
+/**
+ * Форматирование длины в метрах без trailing zeros: «5 м», «5.5 м», «5.25 м».
+ * Используется в схеме (roomLabel, stats) — не трогает поведение `formatM`.
+ */
+export const formatMTrim = (mm: number): string => {
+  const s = (mm / 1000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return `${s} м`;
+};
+
+/**
+ * Форматирование площади в м² без trailing zeros: «12.5 м²», «12 м²».
+ * Используется в схеме (statsRow) — не трогает поведение `formatArea`.
+ */
+export const formatAreaTrim = (mm2: number): string => {
+  const s = (mm2 / 1_000_000).toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+  return `${s} м²`;
+};

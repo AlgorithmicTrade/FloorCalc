@@ -104,4 +104,20 @@ export class OffcutBank {
   all(): readonly Offcut[] {
     return [...this.offcuts];
   }
+
+  /**
+   * Remap rollIndex у всех обрезков по предоставленной карте `oldIdx → newIdx`.
+   * Обрезки, чьего `rollIndex` НЕТ в карте, удаляются (phantom rolls после
+   * rotation post-pass — рулон открыт, но все его pieces ушли в обмен на
+   * rotated piece из другого рулона).
+   */
+  remapAndFilterRollIndices(map: ReadonlyMap<number, number>): void {
+    const next: Offcut[] = [];
+    for (const o of this.offcuts) {
+      const newIdx = map.get(o.rollIndex);
+      if (newIdx === undefined) continue;
+      next.push({ ...o, rollIndex: newIdx });
+    }
+    this.offcuts = next;
+  }
 }

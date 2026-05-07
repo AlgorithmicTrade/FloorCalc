@@ -1,6 +1,23 @@
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import { resolve } from 'node:path';
+import type { Plugin } from 'vite';
+
+/**
+ * Убирает атрибут crossorigin из тегов <script> и <link> в собранном HTML.
+ * Это необходимо для корректной работы CSP при загрузке через file:// протокол
+ * в production-сборке Electron: crossorigin на type="module" скриптах из того же
+ * origin (file://) вызывает сбой выполнения модуля в Chromium с включённым sandbox.
+ */
+function removeCrossoriginPlugin(): Plugin {
+  return {
+    name: 'remove-crossorigin',
+    enforce: 'post',
+    transformIndexHtml(html) {
+      return html.replace(/\s+crossorigin(?:="[^"]*")?/g, '');
+    }
+  };
+}
 
 export default defineConfig({
   main: {
@@ -44,7 +61,7 @@ export default defineConfig({
     }
   },
   renderer: {
-    plugins: [react()],
+    plugins: [react(), removeCrossoriginPlugin()],
     root: resolve(__dirname, '.'),
     resolve: {
       alias: {

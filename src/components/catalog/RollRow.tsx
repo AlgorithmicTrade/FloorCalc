@@ -1,23 +1,29 @@
 /**
- * Одна строка каталога рулонов: чекбокс «активен для расчёта» +
- * размеры + кнопка удаления.
+ * Одна строка каталога рулонов: цветовой swatch (цвет типоразмера на схеме) +
+ * чекбокс «активен для расчёта» + размеры + кнопка удаления.
  */
 
 import type { RollType } from '@shared/ipc-contract';
 import { Checkbox } from '@/components/design-system/Checkbox';
 import { IconButton } from '@/components/design-system/IconButton';
 import { useCatalogStore } from '@/store/catalogStore';
-import { formatM } from '@/domain/units';
+import { formatMTrim } from '@/domain/units';
+import { SCHEME_PALETTE } from '@/components/result/SchemeRenderer';
 import styles from './RollRow.module.css';
 
 export interface RollRowProps {
   roll: RollType;
+  /** Индекс рулона в полном каталоге — определяет цвет на схеме. */
+  catalogIndex: number;
 }
 
-export function RollRow({ roll }: RollRowProps) {
+export function RollRow({ roll, catalogIndex }: RollRowProps) {
   const isSelected = useCatalogStore((s) => s.selectedRollIds.has(roll.id));
   const toggleSelected = useCatalogStore((s) => s.toggleSelected);
   const removeRoll = useCatalogStore((s) => s.removeRoll);
+
+  const swatchColor =
+    SCHEME_PALETTE[catalogIndex % SCHEME_PALETTE.length] ?? SCHEME_PALETTE[0]!;
 
   return (
     <div className={styles.row}>
@@ -26,10 +32,15 @@ export function RollRow({ roll }: RollRowProps) {
         onChange={() => {
           void toggleSelected(roll.id);
         }}
-        aria-label={`Активировать рулон ${formatM(roll.width)} × ${formatM(roll.length)}`}
+        aria-label={`Активировать рулон ${formatMTrim(roll.width)} × ${formatMTrim(roll.length)}`}
+      />
+      <span
+        className={styles.swatch}
+        style={{ background: swatchColor }}
+        aria-hidden="true"
       />
       <span className={`t-body ${styles.size}`}>
-        {formatM(roll.width)} × {formatM(roll.length)}
+        {formatMTrim(roll.width)} × {formatMTrim(roll.length)}
       </span>
       <IconButton
         size="sm"

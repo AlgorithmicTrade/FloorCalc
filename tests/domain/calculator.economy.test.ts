@@ -34,7 +34,7 @@ describe('calculateEconomy', () => {
         placedAtY: 0
       });
     });
-    it('0 швов', () => expect(r.totalSeamLengthMm).toBe(0));
+    it('0 швов', () => expect(r.seamCount).toBe(0));
     it('обрезки в банке: 1×5 м (боковой) + 4×25 м (хвост рулона)', () => {
       // Боковой: width=4000-3000=1000, length=5000 → 5_000_000 mm²
       // Хвост:   width=4000, length=30000-5000=25000 → 100_000_000 mm²
@@ -53,10 +53,7 @@ describe('calculateEconomy', () => {
     //  - Полоса B (x=4000, width=2000, length=10000): подходит хвост из банка
     //    (width=4000≥2000, length=20000≥10000) → consume → используем 2000×10000
     //    из хвоста.
-    // Итого: 1 рулон, 2 piece, 1 продольный шов длиной 10000, 0 поперечных.
-    // План §3.7 (3 куска + 20м швов) предполагает другую разбивку
-    // (например, 3 полосы 4/4/4 в горизонтальной ориентации); это будущая
-    // оптимизация порядка укладки. MVP-greedy решает задачу проще.
+    // Итого: 1 рулон, 2 piece, 1 продольный шов, 0 поперечных → seamCount=1.
     const room = createRoom('s2b', 6, 10);
     const roll = createRoll(4, 30);
     const r = calculateEconomy(room, roll);
@@ -65,21 +62,17 @@ describe('calculateEconomy', () => {
     it('1 рулон (банк хвоста переиспользован для второй полосы)', () =>
       expect(r.rollsUsed).toBe(1));
     it('2 piece (A: 4×10, B: 2×10)', () => expect(r.pieces).toHaveLength(2));
-    it('швы = 10 м (один продольный, поперечных нет) — ОТЛИЧАЕТСЯ от плана §3.7 (20 м)', () => {
-      // План ожидает 2 продольных шва (~20м), что подразумевает 3 полосы
-      // 4/4/2. У нас одно roll.width=4000 ≥ оставшихся 2000 → одна граница.
-      expect(r.totalSeamLengthMm).toBe(10_000);
+    it('1 продольный шов (≠ план §3.7 «2 шва»)', () => {
+      // План ожидает 2 продольных шва, что подразумевает 3 полосы 4/4/2.
+      // У нас одно roll.width=4000 ≥ оставшихся 2000 → одна граница → seamCount=1.
+      expect(r.seamCount).toBe(1);
     });
   });
 
   describe('Сценарий 4 (план §3.7): помещение 8×3 м, рулон 6×4 м (ширина рулона 4)', () => {
-    // План: «8 × 3 м, 4 × 6 м, economy → rollsUsed=2 (бок 1×6 не годится для 3×2)».
+    // Plan: «8 × 3 м, 4 × 6 м, economy → rollsUsed=2».
     // Convention: width=3 (поперёк), length=8 (вдоль). Рулон width=4, length=6.
-    // Полоса x=0 stripWidth=3 needLen=8000:
-    //  - iter1: roll 0, useLen=6000. piece(0, w=3, l=6, y=0). боковой 1×6 в банк, хвост нет.
-    //  - iter2: needLen=2000. findBestFor(3000,1): банк {w=1000,l=6000} — width<3000 → null.
-    //    roll 1, useLen=2000. piece(1, w=3, l=2, y=6000). боковой 1×2 в банк, хвост 4×4 в банк.
-    // rollsUsed=2, 1 поперечный шов = 3000.
+    // rollsUsed=2, 1 поперечный шов → seamCount=1.
     const room = createRoom('s4', 3, 8);
     const roll = createRoll(4, 6);
     const r = calculateEconomy(room, roll);
@@ -88,7 +81,7 @@ describe('calculateEconomy', () => {
     it('2 рулона (боковой 1×6 не подходит для добора шириной 3)', () =>
       expect(r.rollsUsed).toBe(2));
     it('2 piece', () => expect(r.pieces).toHaveLength(2));
-    it('1 поперечный шов = 3000 mm', () => expect(r.totalSeamLengthMm).toBe(3000));
+    it('1 поперечный шов', () => expect(r.seamCount).toBe(1));
     it('warning о длине помещения > длины рулона', () => {
       expect(r.warnings).toContain('Помещение длиннее рулона — потребуются поперечные доборы');
     });
@@ -101,7 +94,7 @@ describe('calculateEconomy', () => {
 
     it('feasible', () => expect(r.feasible).toBe(true));
     it('1 рулон', () => expect(r.rollsUsed).toBe(1));
-    it('0 швов', () => expect(r.totalSeamLengthMm).toBe(0));
+    it('0 швов', () => expect(r.seamCount).toBe(0));
     it('wasteArea = 0', () => expect(r.wasteAreaMm2).toBe(0));
     it('1 piece покрывает всё', () => {
       expect(r.pieces).toHaveLength(1);
@@ -116,7 +109,7 @@ describe('calculateEconomy', () => {
 
     it('feasible', () => expect(r.feasible).toBe(true));
     it('1 рулон', () => expect(r.rollsUsed).toBe(1));
-    it('0 швов', () => expect(r.totalSeamLengthMm).toBe(0));
+    it('0 швов', () => expect(r.seamCount).toBe(0));
   });
 
   describe('Граничные случаи', () => {

@@ -14,7 +14,7 @@
 
 import type { CalculationResult, Piece, RollType, Room } from '../types';
 import { OffcutBank } from './bank';
-import { computeSeamLength } from './seams';
+import { computeSeamCount } from './seams';
 import { planStrips } from './strip';
 
 export function calculateEconomy(room: Room, roll: RollType): CalculationResult {
@@ -25,7 +25,7 @@ export function calculateEconomy(room: Room, roll: RollType): CalculationResult 
       roomId: room.id,
       rollTypeId: roll.id,
       rollsUsed: 0,
-      totalSeamLengthMm: 0,
+      seamCount: 0,
       pieces: [],
       wasteAreaMm2: 0,
       warnings: ['Помещение не задано'],
@@ -124,7 +124,7 @@ export function calculateEconomy(room: Room, roll: RollType): CalculationResult 
   const roomArea = room.width * room.length;
   const feasible = coveredArea === roomArea;
 
-  const totalSeamLengthMm = computeSeamLength(pieces, room);
+  const seamCount = computeSeamCount(pieces, room);
   const wasteAreaMm2 = bank.totalArea();
 
   return {
@@ -132,7 +132,7 @@ export function calculateEconomy(room: Room, roll: RollType): CalculationResult 
     roomId: room.id,
     rollTypeId: roll.id,
     rollsUsed,
-    totalSeamLengthMm,
+    seamCount,
     pieces,
     wasteAreaMm2,
     warnings,

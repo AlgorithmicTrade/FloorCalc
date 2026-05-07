@@ -23,8 +23,8 @@ export function RollCatalog() {
         </div>
       ) : (
         <div className={styles.list}>
-          {rolls.map((roll) => (
-            <RollRow key={roll.id} roll={roll} />
+          {rolls.map((roll, index) => (
+            <RollRow key={roll.id} roll={roll} catalogIndex={index} />
           ))}
         </div>
       )}

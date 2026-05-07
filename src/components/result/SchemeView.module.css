@@ -10,3 +10,17 @@
 .canvas {
   display: block;
 }
+
+.tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(20, 22, 28, 0.95);
+  color: #e8eaef;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  z-index: 10;
+  white-space: nowrap;
+  border: 1px solid #3b3d45;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}

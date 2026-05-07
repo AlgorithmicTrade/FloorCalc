@@ -46,14 +46,22 @@ export type Piece = {
   sourceX: number;
   /** Координата Y выреза в исходном рулоне, mm. */
   sourceY: number;
-  /** Ширина куска, mm (поперёк рулона). */
+  /** Ширина куска, mm (в комнате: ось X, placedAtX..placedAtX+width). */
   width: number;
-  /** Длина куска, mm (вдоль рулона). */
+  /** Длина куска, mm (в комнате: ось Y, placedAtY..placedAtY+length). */
   length: number;
   /** Координата X в помещении (0..room.width), mm. */
   placedAtX: number;
   /** Координата Y в помещении (0..room.length), mm. */
   placedAtY: number;
+  /**
+   * Если `rotated=true`, кусок повёрнут на 90° относительно исходной ориентации
+   * рулона. В исходном рулоне был вырезан прямоугольник размером
+   * `[sourceX..sourceX+length] × [sourceY..sourceY+width]` (ширина и длина свапнуты),
+   * а в комнате он лежит как `width × length` (length по оси Y, width по оси X).
+   * При `rotated=false` (по умолчанию): вырез `[sourceX..sourceX+width] × [sourceY..sourceY+length]`.
+   */
+  rotated?: boolean;
 };
 
 /**
@@ -78,8 +86,8 @@ export type CalculationResult = {
   rollTypeId: string;
   /** Сколько целых рулонов использовано для покрытия помещения. */
   rollsUsed: number;
-  /** Суммарная длина всех швов (продольных + поперечных), mm. */
-  totalSeamLengthMm: number;
+  /** Количество дискретных швов (продольных + поперечных). */
+  seamCount: number;
   /** Все уложенные куски в порядке их размещения. */
   pieces: Piece[];
   /** Площадь обрезков (то, что ушло в waste / банк), mm². */

@@ -2,8 +2,11 @@
  * Выбор лучшего рулона из активных по результату расчёта.
  *
  * Лексикографический порядок (план §3.3):
- *  - economy → (rollsUsed, totalSeamLengthMm, wasteAreaMm2)
- *  - optimal → (totalSeamLengthMm, rollsUsed, wasteAreaMm2)
+ *  - economy → (rollsUsed, seamCount, wasteAreaMm2)
+ *  - optimal → (seamCount, rollsUsed, wasteAreaMm2)
+ *
+ * Ориентация укладки фиксированная: рулон всегда укладывается длиной вдоль
+ * `room.length` (полосы шириной `roll.width` идут поперёк, по `room.width`).
  */
 
 import type { CalculationResult, Mode, RollType, Room } from '../types';
@@ -26,8 +29,8 @@ export function selectBestRoll(
   const calc = mode === 'economy' ? calculateEconomy : calculateOptimal;
   const compareKey = (r: CalculationResult): readonly [number, number, number] =>
     mode === 'economy'
-      ? [r.rollsUsed, r.totalSeamLengthMm, r.wasteAreaMm2]
-      : [r.totalSeamLengthMm, r.rollsUsed, r.wasteAreaMm2];
+      ? [r.rollsUsed, r.seamCount, r.wasteAreaMm2]
+      : [r.seamCount, r.rollsUsed, r.wasteAreaMm2];
 
   let bestRoll: RollType = activeRolls[0]!;
   let bestResult: CalculationResult = calc(room, bestRoll);
