@@ -12,16 +12,16 @@
  * Под схемой — две строки статистики (общая + разбивка по типоразмерам), они
  * попадают в любой экспорт. Warnings выводятся в HTML-tooltip над картинкой.
  *
- * На самих кусках отображается только номер рулона. Размеры (длина/ширина куска
- * и обрезка) показываются в HTML-tooltip при hover — на схеме их нет, чтобы не
- * перегружать вид и экспорт.
+ * На самих кусках отображается только номер рулона. Размеры куска и площадь
+ * остатка обрезка для всего рулона показываются в HTML-tooltip при hover —
+ * на схеме их нет, чтобы не перегружать вид и экспорт.
  */
 
 import { forwardRef, useImperativeHandle, useEffect, useRef, useState } from 'react';
 import Konva from 'konva';
 import type { CalculationResult, Room, RollType, Piece } from '@/domain/types';
 import { renderScheme, type SchemeNode } from './SchemeRenderer';
-import { formatMTrim } from '@/domain/units';
+import { formatMTrim, formatAreaTrim } from '@/domain/units';
 import styles from './SchemeView.module.css';
 
 export interface SchemeViewHandle {
@@ -198,7 +198,7 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
 
       const piece = pieceById.get(pieceId);
       const tooltipLines = piece
-        ? computeTooltipLines(piece, rollByTypeId, roll)
+        ? computeTooltipLines(piece, result.pieces, rollByTypeId, roll)
         : [];
 
       group.on('mouseenter mousemove', (e) => {
@@ -241,13 +241,17 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
 
 /**
  * Формирует массив строк для HTML-tooltip при hover на piece.
- * Показывает размеры куска и размеры обрезка (если рулон обрезался).
- * @param piece    - кусок покрытия.
- * @param rollMap  - маппинг rollTypeId → RollType из каталога.
- * @param fallback - резервный тип рулона, если rollTypeId не найден в каталоге.
+ * Показывает размеры куска и площадь остатка обрезка для всего рулона,
+ * из которого этот кусок был вырезан (агрегируется по piece.rollIndex).
+ *
+ * @param piece     - кусок покрытия.
+ * @param allPieces - все pieces расчёта (для суммирования по rollIndex).
+ * @param rollMap   - маппинг rollTypeId → RollType из каталога.
+ * @param fallback  - резервный тип рулона, если rollTypeId не найден в каталоге.
  */
 function computeTooltipLines(
   piece: Piece,
+  allPieces: readonly Piece[],
   rollMap: ReadonlyMap<string, RollType>,
   fallback: RollType,
 ): string[] {
@@ -255,13 +259,16 @@ function computeTooltipLines(
   const lines: string[] = [
     `Кусок: ${formatMTrim(piece.width)} × ${formatMTrim(piece.length)}`,
   ];
-  const cutLength = pieceRoll.length - piece.length;
-  const cutWidth = pieceRoll.width - piece.width;
-  if (cutLength > 0) {
-    lines.push(`Обрезок: −${formatMTrim(cutLength)} (длина)`);
+  // Суммарная использованная площадь рулона (все pieces с тем же rollIndex).
+  let usedArea = 0;
+  for (const p of allPieces) {
+    if (p.rollIndex === piece.rollIndex) {
+      usedArea += p.width * p.length;
+    }
   }
-  if (cutWidth > 0) {
-    lines.push(`Обрезок: −${formatMTrim(cutWidth)} (ширина)`);
+  const leftoverArea = pieceRoll.width * pieceRoll.length - usedArea;
+  if (leftoverArea > 0) {
+    lines.push(`Обрезок: ${formatAreaTrim(leftoverArea)}`);
   }
   return lines;
 }

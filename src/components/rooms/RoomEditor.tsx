@@ -60,6 +60,29 @@ export function RoomEditor() {
               suffix="м"
             />
           </label>
+          <div className={styles.swapWrap}>
+            <IconButton
+              size="sm"
+              ariaLabel="Поменять ширину и длину местами"
+              title="Поменять ширину и длину местами"
+              onClick={() =>
+                updateRoom(activeRoom.id, {
+                  width: activeRoom.length,
+                  length: activeRoom.width,
+                })
+              }
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M2 5h10l-2.5-2.5M14 11H4l2.5 2.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </IconButton>
+          </div>
           <label className={styles.label}>
             <span className={styles.labelText}>Длина</span>
             <NumberField

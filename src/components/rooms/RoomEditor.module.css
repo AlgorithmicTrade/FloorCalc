@@ -20,6 +20,14 @@
   gap: var(--space-sm);
 }
 
+/* Колонка-обёртка для кнопки свапа: прижимает кнопку к нижнему краю,
+   чтобы она была на одной линии с полями ввода (а не с подписью label). */
+.swapWrap {
+  display: flex;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
 .label {
   flex: 1 1 0;
   min-width: 0;

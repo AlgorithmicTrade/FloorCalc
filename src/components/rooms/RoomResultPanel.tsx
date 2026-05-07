@@ -33,7 +33,7 @@ export function RoomResultPanel() {
         <Card surface="surface-1" padding="md">
           <EmptyState
             title="Введите размеры помещения"
-            hint="Ширина (поперёк рулона) и длина (вдоль рулона) в метрах."
+            hint="Ширина и длина в метрах."
           />
         </Card>
       ) : (

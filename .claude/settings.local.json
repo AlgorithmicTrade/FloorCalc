@@ -2,7 +2,14 @@
   "permissions": {
     "allow": [
       "Bash(npx electron-builder *)",
-      "Bash(npx electron-vite *)"
+      "Bash(npx electron-vite *)",
+      "Bash(git push *)",
+      "Bash(git tag *)",
+      "Bash(rm -f /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.bat /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.vbs /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.log /c/Users/Uchetko/AppData/Local/Temp/floorcalc-spawn.log)",
+      "Bash(rm -f /c/Users/Uchetko/AppData/Local/floorcalc-updater/pending/*)",
+      "Bash(git checkout *)",
+      "Bash(rm -f /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.bat /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.log /c/Users/Uchetko/AppData/Local/Temp/floorcalc-spawn.log /c/Users/Uchetko/AppData/Local/Temp/floorcalc-pstest.log)",
+      "Read(//c/Users/Uchetko/AppData/Local/floorcalc-updater/pending//**)"
     ]
   }
 }

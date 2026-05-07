@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "npm run typecheck && electron-vite build && electron-builder --config electron-builder.yml",
+    "build:safe": "node scripts/build-safe.cjs",
     "build:publish": "npm run typecheck && electron-vite build && electron-builder --config electron-builder.yml --publish always",
     "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.web.json --noEmit",
     "test": "vitest run",
