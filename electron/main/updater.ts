@@ -118,28 +118,31 @@ export class UpdaterService {
       spawnLogEntry(`installAndRestart: batPath=${batPath}`);
       spawnLogEntry(`installAndRestart: targetExePath=${targetExePath}`);
 
-      // Запускаем bat через powershell.exe -WindowStyle Hidden + Start-Process с -WindowStyle Hidden.
-      // Раньше использовался wscript.exe + .vbs — но Windows Script Host отключён по
-      // умолчанию на части Windows 10/11 систем (Defender ASR / GroupPolicy / 24H2),
-      // и wscript падает с «Отсутствует исполняющее ядро для расширения .vbs».
-      // PowerShell 5.1 встроен во все Windows 10/11 без установки → надёжный launcher.
-      // PS используется только как hidden-launcher — никакой логики обновления внутри PS,
-      // вся бизнес-логика в самом bat'е.
-      // Start-Process с CreateProcess создаёт независимый процесс, не зависящий от
-      // job-object Electron'а — bat переживает app.quit().
-      // Экранирование `'` в PS single-quoted strings: `'` → `''`.
-      const psBatEsc = batPath.replace(/'/g, "''");
-      const psCommand = `Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', '${psBatEsc}') -WindowStyle Hidden`;
-
+      // Запускаем bat через `cmd.exe /c start "" /MIN /B <bat>`.
+      //
+      // Почему именно так:
+      //  - Spawn child напрямую (PowerShell, wscript, cmd-with-bat) на Windows
+      //    наследует job-object Electron. `app.quit()` через 0.5 сек убивает весь job
+      //    вместе с child'ом — это и сломалось в v1.0.4 (powershell -File) и v1.0.7
+      //    (powershell + Start-Process).
+      //  - `cmd.exe /c start ""` использует встроенную команду start, которая делает
+      //    CreateProcess с `CREATE_BREAKAWAY_FROM_JOB` для child. Helper-bat выходит
+      //    из job-object Electron и переживает quit().
+      //  - WSH (wscript+vbs из v1.0.6) — отключён на части Win 10/11 систем (Defender ASR /
+      //    GroupPolicy / 24H2 deprecation), поэтому ненадёжен.
+      //
+      // Флаги start:
+      //  - `""` — пустой title (start интерпретирует первый "..." как title окна;
+      //    без этого с путём в кавычках получаем сюрпризы).
+      //  - `/MIN` — окно cmd-helper'а минимизировано (не разворачивается).
+      //  - `/B` — без нового консольного окна для start-команды.
+      //
+      // `windowsHide:true` для самого spawn'нутого cmd скрывает родительское окно.
+      // Внутреннее cmd-helper для bat появится минимизированным короткой вспышкой —
+      // это компромисс между «гарантированно работает» и «полностью без UI».
       const child = spawn(
-        'powershell.exe',
-        [
-          '-NoProfile',
-          '-NonInteractive',
-          '-ExecutionPolicy', 'Bypass',
-          '-WindowStyle', 'Hidden',
-          '-Command', psCommand
-        ],
+        'cmd.exe',
+        ['/c', 'start', '', '/MIN', '/B', batPath],
         {
           detached: true,
           stdio: 'ignore',
@@ -158,8 +161,8 @@ export class UpdaterService {
 
       child.unref();
 
-      // Пауза, чтобы PowerShell успел вызвать Start-Process до завершения родителя.
-      // PS медленнее cmd на старте (~200 мс), 500 мс с запасом.
+      // Пауза, чтобы cmd успел выполнить `start` до завершения родителя.
+      // 500 мс с запасом (cmd start — ~50 мс).
       await new Promise<void>((resolve) => setTimeout(resolve, 500));
 
       spawnLogEntry('calling app.quit()');

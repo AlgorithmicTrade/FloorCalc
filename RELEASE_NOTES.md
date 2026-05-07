@@ -2,6 +2,17 @@
 
 User-facing release notes for all versions.
 
+## v1.0.8
+
+_Released on 2026-05-07_
+
+### Bug Fix
+
+- Окончательно исправлен запуск приложения после обновления. В v1.0.7 PowerShell-launcher запускался успешно, но **наследовал Windows job-object Electron'а** и убивался при `app.quit()` до того как успевал стартовать cmd. Аналогичная проблема была у v1.0.4 (PowerShell -File). Возврат к проверенному pattern v1.0.5 — `cmd /c start "" /MIN /B bat` — где встроенная команда `start.exe` использует `CREATE_BREAKAWAY_FROM_JOB` для отрыва helper'а от job-object.
+- Зависимости только встроенные: `cmd.exe`. Нет зависимости от WSH (отключён на части систем) или PowerShell (привязан к job).
+- На экране helper-cmd мелькнёт минимизированным (не разворачиваясь). Полное скрытие окна без WSH или подписанных native-launcher'ов на Windows 10/11 невозможно — компромисс ради надёжности.
+- Все улучшения 1.0.6 сохранены: rename файла на актуальную версию, отсутствие ошибки «The batch file cannot be found».
+
 ## v1.0.7
 
 _Released on 2026-05-07_

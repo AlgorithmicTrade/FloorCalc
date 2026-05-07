@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-05-07
+
+### Fixed
+
+- **Updater**: возврат к `cmd /c start "" /MIN /B bat` — единственному надёжному способу детачить helper от Electron job-object без зависимости от WSH.
+
+  Решение:
+  - **Корневая проблема (повторяющаяся между версиями).** Любой child, спавнутый напрямую из Electron на Windows (PowerShell, wscript, cmd-без-start), наследует Windows job-object Electron. Через ~500 мс `app.quit()` убивает весь job вместе с child'ом ДО ТОГО как helper успевает выполниться. Это и сломалось в v1.0.4 (`spawn powershell.exe -File`) и v1.0.7 (`spawn powershell.exe -Command 'Start-Process …'`). В v1.0.7 диагностика показала: PS-spawn успешен (`child.pid=620`), но bat-лог не создан — PS убит до `Start-Process`.
+  - **Почему `cmd /c start "" /B` работает.** Встроенная команда cmd `start.exe` при создании child-процесса использует `CREATE_BREAKAWAY_FROM_JOB` flag в Win32 `CreateProcess`. Помощник bat выходит из job-object Electron и переживает `app.quit()`. Это проверенный pattern из v1.0.5.
+  - **Почему НЕ wscript+vbs (v1.0.6).** WSH отключён по умолчанию на части Win 10/11 (Defender ASR / GroupPolicy / Win11 24H2 deprecation) — `Отсутствует исполняющее ядро для расширения .vbs`.
+  - **Почему НЕ powershell -Command 'Start-Process' (v1.0.7).** PS наследует job-object и убит до `Start-Process` (см. выше).
+  - **Что нового по сравнению с v1.0.5.** Добавлен флаг `/MIN` — окно helper-cmd мелькает минимизированным (не разворачиваясь), что менее заметно для пользователя. Полное скрытие окна без зависимости от WSH/PS на Win 10/11 без подписанных native launcher'ов невозможно — это компромисс между надёжностью и UX.
+  - Все улучшения 1.0.6 (rename файла, `(goto) 2>nul & del` для self-clean) сохранены в bat без изменений.
+
+  Изменения:
+  - electron/main/updater.ts:
+    - `installAndRestart()`: spawn заменён с `powershell.exe + -Command 'Start-Process …'` на `cmd.exe ['/c','start','','/MIN','/B', batPath]`. Опции `detached:true`, `stdio:'ignore'`, `windowsHide:true`, `shell:false` сохранены.
+    - Комментарий полностью переписан: пояснены три провалившиеся попытки (powershell -File, wscript+vbs, powershell + Start-Process) и почему `cmd /c start /B` — единственный надёжный путь.
+    - Пауза перед `app.quit()` 500 мс (cmd start стартует за ~50 мс, 10× запас).
+  - electron/main/updaterHelper.ts:
+    - Без изменений (логика wait/copy/rename/(goto)-trick из v1.0.6 сохранена).
+  - package.json:
+    - `version`: `1.0.7` → `1.0.8`.
+  - package-lock.json:
+    - top-level и `packages[""]` `version`: `1.0.7` → `1.0.8`.
+  - CHANGELOG.md, RELEASE_NOTES.md:
+    - Раздел `1.0.8` с описанием возврата к v1.0.5-pattern.
+
+  Эффект:
+  - Обновление работает: `start.exe` детачит helper из Electron job через `CREATE_BREAKAWAY_FROM_JOB`, bat переживает `app.quit()` и завершает работу.
+  - На экране: окно helper-cmd мелькнёт минимизированным (как иконка в taskbar) и сразу закроется. Полностью без окна — не получается без WSH или native launcher'а.
+  - Все возможности 1.0.6 (rename файла, отсутствие сообщения «cannot be found») работают.
+  - Зависимости: только `cmd.exe` (встроен во все Windows). Никаких WSH, PowerShell, vbs.
+
 ## [1.0.7] - 2026-05-07
 
 ### Fixed
