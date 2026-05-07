@@ -2,6 +2,20 @@
 
 User-facing release notes for all versions.
 
+## v1.0.2
+
+_Released on 2026-05-07_
+
+### 🛠️ Release Fix
+
+- Включено auto-update для portable target. electron-builder для `target: portable` не создаёт `latest.yml`, без которого electron-updater не может проверить наличие новой версии. Workflow `Release` теперь после сборки сам считает sha512 portable-exe и заливает `latest.yml` в release через `gh release upload`.
+- Это закрывает gap между portable-distribution и кастомным auto-update flow (helper-скрипт замены exe, который уже работает в приложении).
+
+### 🔄 Auto-update
+
+- `FloorCalc-0.2.0-portable.exe` (собранный с `app-update.yml` в resources) увидит `latest.yml@1.0.2` и предложит обновление через UpdateBanner.
+- Все будущие релизы будут автоматически содержать `latest.yml` без ручных действий.
+
 ## v1.0.1
 
 _Released on 2026-05-07_

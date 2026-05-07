@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-07
+
+### Fixed
+
+- **CI/Updater**: добавлена ручная генерация и upload `latest.yml` для portable target.
+
+  Решение:
+  - electron-builder для `target: portable` не создаёт `latest.yml` (auto-update в portable изначально не поддерживается официально). В release v1.0.1 был только `FloorCalc-1.0.1-portable.exe`, а `latest.yml` отсутствовал → electron-updater на стороне клиента получал 404 и не мог обнаружить новую версию.
+  - В workflow `Release` после шага `Build & publish` добавлен шаг `Generate and upload latest.yml (portable target)`: считает sha512 (base64) и size portable.exe, формирует `release/latest.yml` с полями `version`, `files[]`, `path`, `sha512`, `releaseDate` и заливает его через `gh release upload --clobber` в текущий тег.
+  - Это закрывает gap между portable target и кастомным auto-update flow в `electron/main/updater.ts` (где `app-update.yml` + helper-скрипт замены exe уже реализованы).
+
+  Изменения:
+  - .github/workflows/release.yml:
+    - Новый step `Generate and upload latest.yml (portable target)` после `Build & publish` — node-based sha512/size, heredoc YAML, `gh release upload --clobber`.
+  - package.json:
+    - `version`: `1.0.1` → `1.0.2`.
+  - package-lock.json:
+    - top-level и `packages[""]` `version`: `1.0.1` → `1.0.2`.
+  - CHANGELOG.md, RELEASE_NOTES.md:
+    - Раздел `1.0.2` с описанием fix'а.
+
+  Эффект:
+  - Каждый последующий релиз автоматически содержит `latest.yml` рядом с portable-exe → electron-updater видит новую версию через `releases/latest/download/latest.yml`.
+  - autoUpdater на запущенном `FloorCalc-0.2.0-portable.exe` (с вшитым `app-update.yml` через extraResources) при первой проверке получит `latest.yml@1.0.2`, отправит `kind: 'available'` через `IPC_CHANNELS.UPDATER_STATUS`, `UpdateBanner` отрисует предложение обновления.
+  - Прошлые релизы v1.0.0 / v1.0.1 остаются как есть (без artifact-fix back-port'а).
+
 ## [1.0.1] - 2026-05-07
 
 ### Fixed

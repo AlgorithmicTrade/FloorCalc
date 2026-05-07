@@ -50,3 +50,33 @@ jobs:
         run: npm run build:publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate and upload latest.yml (portable target)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          EXE="release/FloorCalc-${VERSION}-portable.exe"
+          if [ ! -f "$EXE" ]; then
+            echo "ERROR: $EXE not found"; ls -la release/; exit 1
+          fi
+          SIZE=$(node -e "console.log(require('fs').statSync(process.argv[1]).size)" "$EXE")
+          SHA=$(node -e "
+            const c=require('crypto'), f=require('fs');
+            console.log(c.createHash('sha512').update(f.readFileSync(process.argv[1])).digest('base64'));
+          " "$EXE")
+          DATE=$(node -e "console.log(new Date().toISOString())")
+          cat > release/latest.yml <<EOF
+          version: ${VERSION}
+          files:
+            - url: FloorCalc-${VERSION}-portable.exe
+              sha512: ${SHA}
+              size: ${SIZE}
+          path: FloorCalc-${VERSION}-portable.exe
+          sha512: ${SHA}
+          releaseDate: '${DATE}'
+          EOF
+          echo "----- generated release/latest.yml -----"
+          cat release/latest.yml
+          gh release upload "v${VERSION}" release/latest.yml --clobber --repo "${GITHUB_REPOSITORY}"
