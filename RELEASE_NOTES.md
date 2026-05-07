@@ -2,6 +2,25 @@
 
 User-facing release notes for all versions.
 
+## v1.0.0
+
+_Released on 2026-05-07_
+
+### ✨ New Features
+
+- **domain**: Add 3 source file(s), update 22 source file(s), +2 more
+
+  Changes in this commit:
+  - add 3 source file(s)
+  - update 22 source file(s)
+  - add 3 test(s)
+  - update 3 test(s)
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v0.2.0
 
 _Released on 2026-05-07_

@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-05-07
+
+### Added
+- **domain**: add 3 source file(s), update 22 source file(s), +2 more (fd18dbe)
+
+  Changes in this commit:
+  - add 3 source file(s)
+  - update 22 source file(s)
+  - add 3 test(s)
+  - update 3 test(s)
+
 ## [0.2.0] - 2026-05-07
 
 ### Added
