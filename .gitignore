@@ -35,3 +35,6 @@ Thumbs.db
 .claude/hooks/beads-sync-trigger.log
 .claude/worktrees/
 docs/plans/agile-prancing-pnueli.md
+
+# Local test build outputs (never committed)
+release-test/
