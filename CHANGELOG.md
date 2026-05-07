@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-05-07
+
+### Added
+- **App**: упростить hint, добавить swap-кнопку, обновить tooltip обрезка и safe-build (e96dab9)
+
+  Решение:
+  - В EmptyState панели результатов убрать пояснения «(поперёк рулона)/(вдоль рулона)» — оставить чистое «Ширина и длина в метрах».
+  - Добавить компактную IconButton-стрелку свапа между полями ширины и длины (один patch updateRoom меняет оба значения местами).
+  - В hover-tooltip схемы заменить две дельтовые строки «Обрезок: −X (длина/ширина)» одной строкой с площадью остатка для всего рулона целиком (агрегация по rollIndex через formatAreaTrim) — корректно работает в economy / optimal / mixed.
+  - Добавить Windows-friendly скрипт build:safe для обхода EBUSY на release\win-unpacked\resources\app.asar (типичный handle от Defender / Explorer).
+  
+  Изменения:
+  - src/components/rooms/RoomResultPanel.tsx:
+    - EmptyState.hint: упрощён текст подсказки.
+  - src/components/rooms/RoomEditor.tsx:
+    - dimensions: между двумя <label> добавлен .swapWrap с IconButton (size="sm") и SVG-стрелкой; onClick меняет width/length местами одним patch'ем updateRoom.
+  - src/components/rooms/RoomEditor.module.css:
+    - .swapWrap: flex-column align-items: flex-end — кнопка прижата к низу, на одной линии с input'ами.
+  - src/components/result/SchemeView.tsx:
+    - computeTooltipLines: принимает result.pieces, считает usedArea по piece.rollIndex, выводит leftoverArea = roll.area − usedArea одной строкой «Обрезок: X.YY м²»; импорт formatAreaTrim; обновлён header-комментарий.
+  - scripts/kill-processes.cjs:
+    - taskkill для FloorCalc.exe / electron.exe / app-builder.exe / 7z.exe / electron-builder.exe (silent на «не найдено»).
+  - scripts/build-safe.cjs:
+    - Pipeline: kill-процессы → каскадная очистка out/ и release/ (cmd rmdir → fs.rmSync → rename + async cleanup, до 5 попыток с kill+sleep между ними) → fallback на release-new/ или release-<ts>/ через --config.directories.output → typecheck → electron-vite build → electron-builder.
+  - package.json:
+    - scripts.build:safe → node scripts/build-safe.cjs.
+  - .gitignore:
+    - release-new/ добавлен в локальные test-build outputs.
+  - .claude/settings.local.json:
+    - расширен allow-list permissions для git push/tag/checkout и cleanup-команд updater'а (локальный конфиг сессии).
+  
+  Эффект:
+  - UX редактора помещения чище: меньше текста в подсказке, мгновенный свап ориентации одним кликом.
+  - Tooltip схемы даёт более полезную метрику — реальная площадь остатка рулона, а не дельты сторон одного куска (171 unit-test зелёный, type-check OK).
+  - Сборка под Windows надёжнее: при заблокированном release/ автоматически переключается на release-new/, не требует ручного закрытия Explorer/Defender и не падает с EBUSY на app.asar.
+
 ## [1.0.8] - 2026-05-07
 
 ### Fixed
