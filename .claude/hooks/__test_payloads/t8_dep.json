@@ -1,0 +1,1 @@
+{"tool_name":"Bash","tool_input":{"command":"bd dep add FundingBot-aaa --on FundingBot-bbb"},"tool_response":{"stdout":""}}

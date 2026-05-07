@@ -1,0 +1,1 @@
+{"tool_name":"Bash","tool_input":{"command":"bd list --all && bd update FundingBot-chain -s open"},"tool_response":{"stdout":""}}

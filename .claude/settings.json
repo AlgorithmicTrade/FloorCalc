@@ -1,0 +1,10 @@
+{
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5"
+  },
+  "enabledPlugins": {
+    "voltagent-dev-exp@voltagent-subagents": true,
+    "voltagent-qa-sec@voltagent-subagents": true
+  },
+  "plansDirectory": "./docs/plans"
+}

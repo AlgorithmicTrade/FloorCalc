@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Upstream orchestrator kit (vendored npm package, обновляется через npm)
+claude-code-orchestrator-kit/
+
+# Temporary artifacts
+.tmp/
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Claude Code workspace artifacts
+.claude/anytype-sync-queue.txt
+.claude/hooks/__pycache__/
+.claude/hooks/beads-sync-trigger.log
+.claude/worktrees/
