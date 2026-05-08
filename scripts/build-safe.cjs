@@ -260,22 +260,17 @@ async function build() {
     return;
   }
 
-  // 7. Auto-update config для unpacked-версии.
+  // 7. Auto-update config для unpacked-версии (fallback).
   //
-  //    Контекст: electron-builder для portable target кладёт `app-update.yml`
-  //    ВНУТРЬ portable.exe (распаковывается в TEMP при старте), но НЕ создаёт
-  //    файл рядом с win-unpacked/. Это by design: portable.exe — финальный
-  //    артефакт, win-unpacked/ — рабочая папка для отладки.
+  //    Основной путь: electron-builder копирует `build/app-update.yml` в
+  //    `<resources>/app-update.yml` через секцию `extraResources` в
+  //    `electron-builder.yml`. Это покрывает оба artifact'а: portable.exe
+  //    (файл попадает внутрь $PLUGINSDIR/app-64.7z) и win-unpacked/.
   //
-  //    Однако electron-updater (electron/main/updater.ts:41-44) проверяет
-  //    `existsSync(resourcesPath/app-update.yml)` и тихо отключается без
-  //    файла. То есть если запускать `release-new\win-unpacked\FloorCalc.exe`
-  //    напрямую (а это удобно для разработки/тестов) — autoupdate не работает.
-  //
-  //    Решение: генерируем `app-update.yml` для win-unpacked вручную из
-  //    publish-секции electron-builder.yml. Тогда autoupdate работает в обоих
-  //    режимах: portable.exe (как раньше, через встроенный файл) И win-unpacked
-  //    (через сгенерированный нами файл).
+  //    Шаг ниже остаётся как fallback на случай ручной правки конфига:
+  //    если `extraResources` уже отработал — ветка `existsSync(...)`
+  //    зафиксирует это и ничего не перезапишет; если по какой-то причине
+  //    файла нет — сгенерируем его из publish-секции вручную.
   logStep('7', 'Конфиг autoupdate (app-update.yml)');
   const winUnpackedRes = path.join(outputDir, 'win-unpacked', 'resources');
   const appUpdateYmlPath = path.join(winUnpackedRes, 'app-update.yml');

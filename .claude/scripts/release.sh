@@ -1359,10 +1359,79 @@ verify_autoupdate() {
     local repo="${repo_owner}/${repo_name}"
     log_info "Repo: $repo"
 
+    # API access mode: prefer `gh` CLI (5000/h authed), then GITHUB_TOKEN curl,
+    # then anonymous curl (60/h, легко выгорает на двух подряд /push).
+    local _gh_api_mode=""
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        _gh_api_mode="gh"
+        log_info "GitHub API: using 'gh' CLI (authenticated)"
+    elif [ -n "${GITHUB_TOKEN:-}" ]; then
+        _gh_api_mode="token"
+        log_info "GitHub API: using GITHUB_TOKEN (authenticated curl)"
+    else
+        _gh_api_mode="anon"
+        log_warning "Using anonymous GitHub API — rate limit 60/h. Install 'gh' or set GITHUB_TOKEN to raise to 5000/h."
+    fi
+
+    # gh_api_get <path>
+    #   path: "repos/owner/name/..." (без префикса https://api.github.com/).
+    #   stdout: JSON ответ при success.
+    #   stderr: диагностика (rate limit, 404, transient 5xx) при non-200/empty.
+    #   exit:   0 при success, не-0 при любой ошибке (caller проверяет $? или [ -n "$out" ]).
+    gh_api_get() {
+        local path="$1"
+        local out="" code=""
+        case "$_gh_api_mode" in
+            gh)
+                out=$(gh api "$path" 2>/dev/null) || return 1
+                printf '%s' "$out"
+                return 0
+                ;;
+            token)
+                out=$(curl -fsS \
+                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+                    -H "X-GitHub-Api-Version: 2022-11-28" \
+                    -H "Accept: application/vnd.github+json" \
+                    "https://api.github.com/${path}" 2>/dev/null) || return 1
+                printf '%s' "$out"
+                return 0
+                ;;
+            *)
+                local hdr_file body_file
+                hdr_file=$(mktemp 2>/dev/null || echo "/tmp/gh_api_hdr.$$")
+                body_file=$(mktemp 2>/dev/null || echo "/tmp/gh_api_body.$$")
+                code=$(curl -sS -o "$body_file" -D "$hdr_file" -w '%{http_code}' \
+                    "https://api.github.com/${path}" 2>/dev/null || echo "000")
+                if [ "$code" = "200" ]; then
+                    cat "$body_file"
+                    rm -f "$hdr_file" "$body_file"
+                    return 0
+                fi
+                case "$code" in
+                    403)
+                        local reset
+                        reset=$(awk 'tolower($1)=="x-ratelimit-reset:"{print $2}' "$hdr_file" | tr -d '\r')
+                        if [ -n "$reset" ]; then
+                            echo "  ⚠️ GitHub API rate limit exceeded — X-RateLimit-Reset=${reset}" >&2
+                        else
+                            echo "  ⚠️ GitHub API rate limit exceeded — see X-RateLimit-Reset" >&2
+                        fi
+                        ;;
+                    404) echo "  ⚠️ HTTP 404 — repo or path may be wrong (${path})" >&2 ;;
+                    5*)  echo "  ⏳ GitHub API ${code} — transient, will retry" >&2 ;;
+                    000) echo "  ⏳ GitHub API not reachable (network error)" >&2 ;;
+                    *)   echo "  ⚠️ GitHub API HTTP ${code}" >&2 ;;
+                esac
+                rm -f "$hdr_file" "$body_file"
+                return 1
+                ;;
+        esac
+    }
+
     # 2. Wait for GitHub Actions run on this tag to complete.
     #    Поллинг с таймаутом — Windows-runner electron-builder сборки длятся 2-6 мин,
-    #    берём 10 мин с запасом. Интервал 15с — достаточно, чтобы не упереться
-    #    в API rate limit (60 req/h без auth).
+    #    берём 10 мин с запасом. Интервал 15с.
+    #    С `gh`/GITHUB_TOKEN — лимит 5000/h, без auth — 60/h (см. предупреждение выше).
     local timeout_sec=600
     local poll_interval=15
     local elapsed=0
@@ -1373,7 +1442,7 @@ verify_autoupdate() {
 
     while [ "$elapsed" -lt "$timeout_sec" ]; do
         local run_json
-        run_json=$(curl -fsSL "https://api.github.com/repos/${repo}/actions/runs?per_page=10" 2>/dev/null || echo "")
+        run_json=$(gh_api_get "repos/${repo}/actions/runs?per_page=10") || run_json=""
         if [ -n "$run_json" ]; then
             # Ищем самый свежий run, у которого head_branch совпадает с тегом
             # (workflow на push tag получает head_branch=имя_тега).
@@ -1414,7 +1483,8 @@ verify_autoupdate() {
                 echo "  ⏳ no workflow run for $tag yet (${elapsed}s elapsed)"
             fi
         else
-            echo "  ⏳ GitHub API not reachable (${elapsed}s elapsed)"
+            # gh_api_get уже напечатал конкретную причину (rate-limit/404/5xx) в stderr.
+            echo "  ⏳ GitHub API request failed (${elapsed}s elapsed) — see diagnostic above"
         fi
 
         sleep "$poll_interval"
@@ -1431,7 +1501,7 @@ verify_autoupdate() {
     #    electron-updater читает `latest.yml` из Release и сверяет sha512+size.
     #    Без latest.yml и portable.exe autoupdate не работает.
     local release_json
-    release_json=$(curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" 2>/dev/null || echo "")
+    release_json=$(gh_api_get "repos/${repo}/releases/tags/${tag}") || release_json=""
     local assets_check
     assets_check=$(printf '%s' "$release_json" | node -e "
         let raw='';
@@ -1463,11 +1533,17 @@ verify_autoupdate() {
     #    Возможен случай, когда workflow перепутал теги или закэшил старую сборку —
     #    latest.yml укажет не на текущую версию, и клиенты не увидят обновление.
     local latest_yml_url="https://github.com/${repo}/releases/download/${tag}/latest.yml"
-    local advertised_version
-    advertised_version=$(curl -fsSL "$latest_yml_url" 2>/dev/null | awk -F': *' '/^version:/{gsub(/[ \r\t]+$/,"",$2); print $2; exit}' || echo "")
+    local advertised_version="" yml_body_file yml_http_code
+    yml_body_file=$(mktemp 2>/dev/null || echo "/tmp/latest_yml.$$")
+    # CDN endpoint, не api.github.com — auth не нужна, но --write-out даёт явный HTTP-код.
+    yml_http_code=$(curl -sSL -o "$yml_body_file" -w '%{http_code}' "$latest_yml_url" 2>/dev/null || echo "000")
+    if [ "$yml_http_code" = "200" ]; then
+        advertised_version=$(awk -F': *' '/^version:/{gsub(/[ \r\t]+$/,"",$2); print $2; exit}' "$yml_body_file")
+    fi
+    rm -f "$yml_body_file"
 
     if [ -z "$advertised_version" ]; then
-        log_warning "Could not fetch latest.yml from $latest_yml_url"
+        log_warning "Could not fetch latest.yml from $latest_yml_url (HTTP ${yml_http_code})"
         return 0
     fi
 

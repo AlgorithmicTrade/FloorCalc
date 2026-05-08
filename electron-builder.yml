@@ -8,6 +8,9 @@ files:
   - out/**/*
   - resources/fonts/**
   - package.json
+extraResources:
+  - from: build/app-update.yml
+    to: app-update.yml
 asar: true
 compression: maximum
 win:
