@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-05-08
+
+### Fixed
+- **Scheme**: добавить tap-tooltip на схеме для мобильных устройств (65360d5)
+
+  Решение:
+  - На каждой piece-группе Konva добавить обработчик 'click tap' с toggle-логикой по pieceId: первый тап показывает tooltip, повторный по тому же куску — закрывает, тап по другому — переключает.
+  - На сам Stage добавить обработчик 'click tap', который закрывает tooltip при тапе в пустую область канваса (e.target === stage); piece-группы прерывают всплытие через e.cancelBubble = true.
+  - Ввести state pinned + ref pinnedRef для различения hover-tooltip и tap-tooltip: hover-handlers (mouseenter/move/leave) проверяют pinnedRef и не перебивают tap-открытый tooltip; pinnedRef обновляется напрямую без deps, чтобы тап не пересоздавал Konva-объекты.
+  - Расширить tooltip-state полем pieceId для идентификации активного куска при toggle.
+  - Добавить clampedPos(): позиция tooltip ограничивается границами контейнера — если 200×60 окно вылезает за правый/нижний край, переворачивается налево/вверх от точки тапа (важно на узких mobile-канвасах, где палец у правого края).
+  - Сбрасывать tooltip и pinned в начале второго useEffect (перерисовка при смене данных/размера) — иначе при смене ориентации экрана/помещения остаётся «фантом» tooltip от старого piece.
+  
+  Изменения:
+  - src/components/result/SchemeView.tsx:
+    - tooltip-state (строка 66): тип расширен полем pieceId: string | null.
+    - state pinned + pinnedRef (строки 68-73): pinnedRef.current = pinned синхронизируется на каждом рендере; pinned не в deps useEffect.
+    - useEffect перерисовки (строки 161-163): setTooltip(null); setPinned(false) в начале.
+    - clampedPos() (строки 268-276): inline-хелпер с TW=200, TH=60, fallback на stage size при отсутствии container.
+    - hover-handlers (строки 279-295): if (pinnedRef.current) return на mouseenter/move И на mouseleave; clampedPos для позиции.
+    - tap-handler на group (строки 298-319): e.cancelBubble = true; setTooltip((prev) => prev?.pieceId === pieceId ? (setPinned(false), null) : (setPinned(true), { x, y, lines, pieceId })).
+    - stage-handler (строки 329-335): on('click tap') с проверкой e.target === stage → setTooltip(null); setPinned(false).
+    - useEffect deps (строка 338): добавлен setPinned для линтера.
+  
+  Эффект:
+  - Desktop (мышь): hover-логика идентична v1.1.2, добавилась только защита от перебивания pinned-tooltip.
+  - Mobile tap по piece: tooltip открывается, держится до второго тапа (toggle off) или тапа по другому piece (переключение).
+  - Mobile tap на пустое место схемы: tooltip закрывается.
+  - Tooltip не вылезает за границы канваса при тапе у правого/нижнего края (clamp срабатывает заранее).
+  - При перерисовке схемы (смена помещения, ротация экрана) tooltip принудительно сбрасывается.
+  - pinnedRef-подход не пересоздаёт Konva-объекты при тапе — производительность не деградирует.
+  - Quality gates: typecheck 0 ошибок; Vitest 196/196 (domain тесты не зависят от tooltip-логики); build без ошибок.
+
 ## [1.1.2] - 2026-05-08
 
 ### Added
