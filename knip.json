@@ -1,20 +1,18 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
-    "electron/main/index.ts",
-    "electron/preload/index.ts",
-    "scripts/*.cjs"
+    "src/main.tsx",
+    "vite.config.ts",
+    "vitest.config.ts"
   ],
   "project": [
-    "electron/**/*.ts",
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.{ts,cjs,js}"
+    "src/**/*.{ts,tsx}"
   ],
   "ignore": [
     "**/*.d.ts"
   ],
   "vite": {
-    "config": ["electron.vite.config.ts"]
+    "config": ["vite.config.ts"]
   },
   "vitest": {
     "config": ["vitest.config.ts"],

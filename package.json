@@ -2,8 +2,7 @@
   "name": "floorcalc",
   "version": "1.0.14",
   "private": true,
-  "description": "FloorCalc — desktop-калькулятор расхода рулонных напольных покрытий",
-  "main": "out/main/index.js",
+  "description": "FloorCalc — web-калькулятор расхода рулонных напольных и настенных покрытий",
   "type": "module",
   "packageManager": "npm@10.8.2",
   "engines": {
@@ -11,17 +10,14 @@
     "npm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "npm run typecheck && electron-vite build && electron-builder --config electron-builder.yml --publish never",
-    "build:safe": "node scripts/build-safe.cjs",
-    "build:publish": "npm run typecheck && electron-vite build && electron-builder --config electron-builder.yml --publish always",
-    "typecheck": "tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "dev": "vite",
+    "build": "npm run typecheck && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.node.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "preview": "electron-vite preview"
+    "test:watch": "vitest"
   },
   "dependencies": {
-    "electron-updater": "^6.3.9",
     "jspdf": "^4.2.1",
     "konva": "^9.3.16",
     "react": "^19.0.0",
@@ -34,9 +30,6 @@
     "@types/react": "^19.0.2",
     "@types/react-dom": "^19.0.2",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^32.2.7",
-    "electron-builder": "^25.1.8",
-    "electron-vite": "^5.0.0",
     "knip": "^6.12.1",
     "typescript": "^5.6.3",
     "vite": "^7.3.3",

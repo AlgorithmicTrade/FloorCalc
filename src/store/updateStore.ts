@@ -1,75 +1,63 @@
 /**
- * Zustand store статуса auto-updater'a.
+ * Zustand store индикатора версии приложения.
  *
- * Источник событий — main-процесс через `api.updater.onStatus(cb)`.
- * Один раз на старте renderer (App.tsx) вызывает `initialize()`, который
- * подписывается на события и возвращает unsubscribe для cleanup.
+ * Web-реализация (без electron-updater): раз в 10 минут пуллим
+ * `${BASE_URL}version.json` (генерируется CI на каждый деплой). Если на
+ * сервере другая строка — показываем banner «обновите страницу». Сравнение
+ * строкой намеренно: семантика «отличается от текущей сборки» точнее,
+ * чем semver-сравнение, и не требует парсера.
  *
- * `isDismissed` — UI-состояние «пользователь скрыл баннер». Сбрасывается,
- * когда пришёл новый `available`-статус (новая версия — снова показываем).
+ * `__APP_VERSION__` — vite-define из `package.json:version`, заменяется
+ * на литерал в build-time.
  */
 
 import { create } from 'zustand';
-import type { UpdateStatus } from '@shared/ipc-contract';
-import { api } from '@/ipc/client';
+
+const POLL_MS = 10 * 60 * 1000;
+const VERSION_URL = `${import.meta.env.BASE_URL}version.json`;
+
+interface VersionPayload {
+  version?: unknown;
+}
 
 interface UpdateState {
-  status: UpdateStatus;
+  current: string;
+  next: string | null;
   isDismissed: boolean;
 
-  /** Подписка на события main-процесса. Возвращает unsubscribe для useEffect cleanup. */
+  /** Подписка на polling. Возвращает unsubscribe для useEffect cleanup. */
   initialize: () => () => void;
-  triggerCheck: () => Promise<void>;
-  triggerDownload: () => Promise<void>;
-  triggerInstall: () => Promise<void>;
   dismiss: () => void;
 }
 
-export const useUpdateStore = create<UpdateState>((set) => ({
-  status: { kind: 'idle' },
+async function fetchRemoteVersion(): Promise<string | null> {
+  try {
+    const r = await fetch(`${VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = (await r.json()) as VersionPayload;
+    return typeof j.version === 'string' ? j.version : null;
+  } catch {
+    return null;
+  }
+}
+
+export const useUpdateStore = create<UpdateState>((set, get) => ({
+  current: __APP_VERSION__,
+  next: null,
   isDismissed: false,
 
   initialize: (): (() => void) => {
-    const unsubscribe = api.updater.onStatus((status: UpdateStatus): void => {
-      // Каждый раз когда приходит новая 'available' — это новая версия,
-      // имеет смысл показать баннер заново даже если пользователь его скрывал.
-      if (status.kind === 'available') {
-        set({ status, isDismissed: false });
-      } else {
-        set({ status });
+    const tick = async (): Promise<void> => {
+      const remote = await fetchRemoteVersion();
+      if (!remote) return;
+      const state = get();
+      if (remote !== state.current && remote !== state.next) {
+        set({ next: remote, isDismissed: false });
       }
-    });
-    return unsubscribe;
-  },
-
-  triggerCheck: async (): Promise<void> => {
-    try {
-      await api.updater.checkForUpdates();
-    } catch (e) {
-      set({
-        status: { kind: 'error', message: e instanceof Error ? e.message : String(e) }
-      });
-    }
-  },
-
-  triggerDownload: async (): Promise<void> => {
-    try {
-      await api.updater.downloadUpdate();
-    } catch (e) {
-      set({
-        status: { kind: 'error', message: e instanceof Error ? e.message : String(e) }
-      });
-    }
-  },
-
-  triggerInstall: async (): Promise<void> => {
-    try {
-      await api.updater.installAndRestart();
-    } catch (e) {
-      set({
-        status: { kind: 'error', message: e instanceof Error ? e.message : String(e) }
-      });
-    }
+    };
+    void tick();
+    const id = window.setInterval(() => void tick(), POLL_MS);
+    return () => window.clearInterval(id);
   },
 
   dismiss: (): void => set({ isDismissed: true })

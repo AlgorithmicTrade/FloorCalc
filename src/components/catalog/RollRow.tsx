@@ -3,7 +3,7 @@
  * чекбокс «активен для расчёта» + размеры + кнопка удаления.
  */
 
-import type { RollType } from '@shared/ipc-contract';
+import type { RollType } from '@/domain/types';
 import { Checkbox } from '@/components/design-system/Checkbox';
 import { IconButton } from '@/components/design-system/IconButton';
 import { useCatalogStore } from '@/store/catalogStore';

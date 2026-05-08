@@ -17,7 +17,6 @@
   },
   "files": [],
   "references": [
-    { "path": "./tsconfig.electron.json" },
     { "path": "./tsconfig.web.json" },
     { "path": "./tsconfig.node.json" }
   ]

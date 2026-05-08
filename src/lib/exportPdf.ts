@@ -11,11 +11,15 @@
  * через jsPDF Virtual File System (`addFileToVFS` + `addFont`). TTF лежит
  * в `resources/fonts/Roboto-Regular.ttf` и подгружается лениво при первом
  * экспорте; результат кэшируется в module-scope.
+ *
+ * Save: используем `doc.save(name)` — jsPDF сам инициирует browser-download
+ * через `<a download>`. На iOS Safari PDF откроется в новой вкладке (норма
+ * для Apple, см. jsPDF README) — пользователь сохраняет через системное share.
  */
 
 import { jsPDF } from 'jspdf';
 import robotoRegularUrl from '../../resources/fonts/Roboto-Regular.ttf?url';
-import type { SaveResult } from '@shared/ipc-contract';
+import type { SaveResult } from './exportPng';
 import type { DataUrlExportable } from './printScheme';
 
 const PDF_FONT_VFS_NAME = 'Roboto-Regular.ttf';
@@ -77,8 +81,6 @@ export async function exportPdf(
 
   doc.addImage(dataUrl, 'PNG', 290, 36, 520, 480);
 
-  const blob = doc.output('blob');
-  const buf = await blob.arrayBuffer();
-  const { api } = await import('@/ipc/client');
-  return api.files.savePdf(buf, `${filenameHint}.pdf`);
+  doc.save(`${filenameHint}.pdf`);
+  return { canceled: false };
 }

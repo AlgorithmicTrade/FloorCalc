@@ -1,16 +1,18 @@
 /**
- * Экспорт схемы в PNG-файл через нативный диалог сохранения.
+ * Экспорт схемы в PNG-файл через стандартный browser-download
+ * (`<a download>` + `URL.createObjectURL`). Никаких диалогов сохранения —
+ * браузер сам спросит путь, если у пользователя так настроено.
  *
  * stage — minimal интерфейс Konva-сцены: нам нужен только `toBlob()`. Это
  * позволяет передавать `stageRef.current` через `useImperativeHandle`-экспонированный
  * объект и не тащить тип `Stage` из `konva` в renderer-логику.
  */
 
-import type { SaveResult } from '@shared/ipc-contract';
-
 export interface PngExportable {
   toBlob: () => Promise<Blob | null>;
 }
+
+export type SaveResult = { canceled: boolean };
 
 export async function exportPng(
   stage: PngExportable | null,
@@ -21,7 +23,19 @@ export async function exportPng(
   if (!blob) {
     throw new Error('Не удалось получить изображение со схемы');
   }
-  const buf = await blob.arrayBuffer();
-  const { api } = await import('@/ipc/client');
-  return api.files.savePng(buf, `${filenameHint}.png`);
+
+  const url = URL.createObjectURL(blob);
+  try {
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${filenameHint}.png`;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  } finally {
+    // Освобождаем blob-URL после клика. Браузер уже инициировал скачивание.
+    URL.revokeObjectURL(url);
+  }
+  return { canceled: false };
 }

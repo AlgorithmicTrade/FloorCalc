@@ -1,6 +1,0 @@
-provider: github
-owner: AlgorithmicTrade
-repo: FloorCalc
-releaseType: release
-vPrefixedTagName: true
-updaterCacheDirName: floorcalc-updater

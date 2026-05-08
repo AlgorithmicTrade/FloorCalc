@@ -1,6 +1,6 @@
 ---
-description: Automated release management with version bumping, dual changelogs, and autoupdate verification
-argument-hint: [patch|minor|major] [-m "message"] [--no-verify-autoupdate]
+description: Automated release management with version bumping and dual changelogs
+argument-hint: [patch|minor|major] [-m "message"]
 allowed-tools: Bash
 ---
 
@@ -17,14 +17,6 @@ Execute the release automation script with auto-confirmation for Claude Code.
 - Creates git tag and pushes to GitHub
 - Full rollback support on errors
 - **Custom commit message** for uncommitted changes via `--message` / `-m` flag
-- **Post-release autoupdate verification** — после push tag скрипт ждёт завершения
-  GitHub Actions workflow (до 10 мин), затем проверяет, что в Release появились
-  `*-portable.exe` и `latest.yml`, и что `latest.yml` указывает на новую версию.
-  Без `latest.yml` electron-updater на установленных клиентах НЕ увидит обновление —
-  поэтому проверка обязательна. Отключить: флаг `--no-verify-autoupdate` или
-  env-переменная `RELEASE_SKIP_AUTOUPDATE_VERIFY=true`. Шаг graceful: при FAIL не
-  откатывает релиз (тег уже на remote), а печатает чёткое предупреждение и URL
-  для ручной проверки.
 
 **Generated RELEASE_NOTES.md format:**
 - Friendly scope names (auth → Authentication, db → Database)

@@ -1304,260 +1304,6 @@ $(generate_changelog_entry "$NEW_VERSION" "$DATE")"
     echo ""
 }
 
-# === AUTOUPDATE VERIFICATION ===
-#
-# Post-release verification loop: после push tag релиз ещё не «готов» — должен
-# отработать GitHub Actions workflow, который собирает .exe и публикует
-# артефакты в Release. Только тогда electron-updater на установленных копиях
-# увидит обновление.
-#
-# Без этой проверки тег уезжает на remote, скрипт сообщает «RELEASE SUCCESSFUL»,
-# но если CI упадёт или забудет загрузить latest.yml — autoupdate тихо сломан.
-#
-# Проверяемые условия (все must-pass для PASS):
-#   1. В electron-builder.yml настроен `publish: provider: github` (иначе пропускаем
-#      проверку — релизный путь не через GH Releases).
-#   2. На GitHub Actions запустился workflow run по тегу и завершился conclusion=success.
-#   3. В Release vX.Y.Z прикреплены оба ассета: portable.exe и latest.yml.
-#   4. Содержимое latest.yml содержит `version: X.Y.Z` (совпадает с релизной).
-#
-# Любая FAIL не откатывает релиз (тег уже на remote), но печатает чёткое
-# предупреждение и подсказку — потому что autoupdate должен быть проверяемым,
-# а не подразумеваемым.
-verify_autoupdate() {
-    local version="$1"
-    local tag="v$version"
-    local skip="${RELEASE_SKIP_AUTOUPDATE_VERIFY:-false}"
-
-    if [ "$skip" = "true" ]; then
-        log_warning "Skipping autoupdate verification (RELEASE_SKIP_AUTOUPDATE_VERIFY=true)"
-        return 0
-    fi
-
-    echo ""
-    log_info "Verifying autoupdate readiness..."
-
-    # 1. Detect GitHub repo + provider from electron-builder.yml.
-    #    Если конфига нет или provider != github — релизный путь другой,
-    #    проверка не применима (graceful skip, не фейлим).
-    local builder_yml="$PROJECT_ROOT/electron-builder.yml"
-    if [ ! -f "$builder_yml" ]; then
-        log_info "No electron-builder.yml — skipping autoupdate verification"
-        return 0
-    fi
-    if ! grep -qE "provider:\s*github" "$builder_yml"; then
-        log_info "electron-builder.yml has no GitHub publish provider — skipping autoupdate verification"
-        return 0
-    fi
-    local repo_owner repo_name
-    repo_owner=$(awk -F': *' '/^[[:space:]]+owner:/{print $2; exit}' "$builder_yml" | tr -d '"' | tr -d "'" | tr -d ' ')
-    repo_name=$(awk -F': *' '/^[[:space:]]+repo:/{print $2; exit}' "$builder_yml" | tr -d '"' | tr -d "'" | tr -d ' ')
-    if [ -z "$repo_owner" ] || [ -z "$repo_name" ]; then
-        log_warning "Could not detect repo owner/name in electron-builder.yml — skipping verification"
-        return 0
-    fi
-    local repo="${repo_owner}/${repo_name}"
-    log_info "Repo: $repo"
-
-    # API access mode: prefer `gh` CLI (5000/h authed), then GITHUB_TOKEN curl,
-    # then anonymous curl (60/h, легко выгорает на двух подряд /push).
-    local _gh_api_mode=""
-    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-        _gh_api_mode="gh"
-        log_info "GitHub API: using 'gh' CLI (authenticated)"
-    elif [ -n "${GITHUB_TOKEN:-}" ]; then
-        _gh_api_mode="token"
-        log_info "GitHub API: using GITHUB_TOKEN (authenticated curl)"
-    else
-        _gh_api_mode="anon"
-        log_warning "Using anonymous GitHub API — rate limit 60/h. Install 'gh' or set GITHUB_TOKEN to raise to 5000/h."
-    fi
-
-    # gh_api_get <path>
-    #   path: "repos/owner/name/..." (без префикса https://api.github.com/).
-    #   stdout: JSON ответ при success.
-    #   stderr: диагностика (rate limit, 404, transient 5xx) при non-200/empty.
-    #   exit:   0 при success, не-0 при любой ошибке (caller проверяет $? или [ -n "$out" ]).
-    gh_api_get() {
-        local path="$1"
-        local out="" code=""
-        case "$_gh_api_mode" in
-            gh)
-                out=$(gh api "$path" 2>/dev/null) || return 1
-                printf '%s' "$out"
-                return 0
-                ;;
-            token)
-                out=$(curl -fsS \
-                    -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-                    -H "X-GitHub-Api-Version: 2022-11-28" \
-                    -H "Accept: application/vnd.github+json" \
-                    "https://api.github.com/${path}" 2>/dev/null) || return 1
-                printf '%s' "$out"
-                return 0
-                ;;
-            *)
-                local hdr_file body_file
-                hdr_file=$(mktemp 2>/dev/null || echo "/tmp/gh_api_hdr.$$")
-                body_file=$(mktemp 2>/dev/null || echo "/tmp/gh_api_body.$$")
-                code=$(curl -sS -o "$body_file" -D "$hdr_file" -w '%{http_code}' \
-                    "https://api.github.com/${path}" 2>/dev/null || echo "000")
-                if [ "$code" = "200" ]; then
-                    cat "$body_file"
-                    rm -f "$hdr_file" "$body_file"
-                    return 0
-                fi
-                case "$code" in
-                    403)
-                        local reset
-                        reset=$(awk 'tolower($1)=="x-ratelimit-reset:"{print $2}' "$hdr_file" | tr -d '\r')
-                        if [ -n "$reset" ]; then
-                            echo "  ⚠️ GitHub API rate limit exceeded — X-RateLimit-Reset=${reset}" >&2
-                        else
-                            echo "  ⚠️ GitHub API rate limit exceeded — see X-RateLimit-Reset" >&2
-                        fi
-                        ;;
-                    404) echo "  ⚠️ HTTP 404 — repo or path may be wrong (${path})" >&2 ;;
-                    5*)  echo "  ⏳ GitHub API ${code} — transient, will retry" >&2 ;;
-                    000) echo "  ⏳ GitHub API not reachable (network error)" >&2 ;;
-                    *)   echo "  ⚠️ GitHub API HTTP ${code}" >&2 ;;
-                esac
-                rm -f "$hdr_file" "$body_file"
-                return 1
-                ;;
-        esac
-    }
-
-    # 2. Wait for GitHub Actions run on this tag to complete.
-    #    Поллинг с таймаутом — Windows-runner electron-builder сборки длятся 2-6 мин,
-    #    берём 10 мин с запасом. Интервал 15с.
-    #    С `gh`/GITHUB_TOKEN — лимит 5000/h, без auth — 60/h (см. предупреждение выше).
-    local timeout_sec=600
-    local poll_interval=15
-    local elapsed=0
-    local conclusion=""
-    local status=""
-
-    log_info "Polling GitHub Actions runs for tag $tag (timeout ${timeout_sec}s, interval ${poll_interval}s)..."
-
-    while [ "$elapsed" -lt "$timeout_sec" ]; do
-        local run_json
-        run_json=$(gh_api_get "repos/${repo}/actions/runs?per_page=10") || run_json=""
-        if [ -n "$run_json" ]; then
-            # Ищем самый свежий run, у которого head_branch совпадает с тегом
-            # (workflow на push tag получает head_branch=имя_тега).
-            local parsed
-            parsed=$(printf '%s' "$run_json" | node -e "
-                let raw='';
-                process.stdin.on('data',d=>raw+=d);
-                process.stdin.on('end',()=>{
-                  try {
-                    const j=JSON.parse(raw);
-                    const r=(j.workflow_runs||[]).find(x=>x.head_branch===process.argv[1]);
-                    if(!r){console.log('||');return;}
-                    console.log([r.status||'', r.conclusion||'', r.html_url||''].join('|'));
-                  } catch(e){console.log('||');}
-                });
-            " "$tag" 2>/dev/null || echo "||")
-            status="${parsed%%|*}"
-            local rest="${parsed#*|}"
-            conclusion="${rest%%|*}"
-            local run_url="${rest#*|}"
-
-            if [ "$status" = "completed" ]; then
-                if [ "$conclusion" = "success" ]; then
-                    log_success "Workflow completed: success (${run_url:-no url})"
-                    break
-                else
-                    log_warning "Workflow completed with conclusion=${conclusion:-unknown}"
-                    log_info "Autoupdate likely BROKEN until the workflow succeeds."
-                    [ -n "$run_url" ] && log_info "Run: $run_url"
-                    log_info "Re-run the workflow on GitHub Actions and verify $tag manually."
-                    return 0
-                fi
-            fi
-
-            if [ -n "$status" ]; then
-                echo "  ⏳ workflow status: ${status} (${elapsed}s elapsed)"
-            else
-                echo "  ⏳ no workflow run for $tag yet (${elapsed}s elapsed)"
-            fi
-        else
-            # gh_api_get уже напечатал конкретную причину (rate-limit/404/5xx) в stderr.
-            echo "  ⏳ GitHub API request failed (${elapsed}s elapsed) — see diagnostic above"
-        fi
-
-        sleep "$poll_interval"
-        elapsed=$((elapsed + poll_interval))
-    done
-
-    if [ "$status" != "completed" ]; then
-        log_warning "Workflow did not complete within ${timeout_sec}s (last status=${status:-none})"
-        log_info "Tag is pushed; CI may still finish. Verify manually: https://github.com/${repo}/actions"
-        return 0
-    fi
-
-    # 3. Verify Release assets are attached.
-    #    electron-updater читает `latest.yml` из Release и сверяет sha512+size.
-    #    Без latest.yml и portable.exe autoupdate не работает.
-    local release_json
-    release_json=$(gh_api_get "repos/${repo}/releases/tags/${tag}") || release_json=""
-    local assets_check
-    assets_check=$(printf '%s' "$release_json" | node -e "
-        let raw='';
-        process.stdin.on('data',d=>raw+=d);
-        process.stdin.on('end',()=>{
-          try {
-            const j=JSON.parse(raw);
-            const a=j.assets||[];
-            const portable=a.find(x=>/portable.*\.exe$/i.test(x.name));
-            const yml=a.find(x=>x.name==='latest.yml');
-            console.log([portable?portable.name:'', yml?yml.name:''].join('|'));
-          } catch(e){console.log('|');}
-        });
-    " 2>/dev/null || echo "|")
-    local portable_name="${assets_check%%|*}"
-    local yml_name="${assets_check#*|}"
-
-    if [ -z "$portable_name" ] || [ -z "$yml_name" ]; then
-        log_warning "Release ${tag} is missing required autoupdate assets:"
-        [ -z "$portable_name" ] && echo "    ✗ portable.exe (binary download)"
-        [ -z "$yml_name" ] && echo "    ✗ latest.yml (electron-updater feed)"
-        log_info "Without latest.yml, electron-updater clients will NOT see this release."
-        log_info "Re-run the workflow or upload missing assets to: https://github.com/${repo}/releases/tag/${tag}"
-        return 0
-    fi
-    log_success "Release assets present: $portable_name + $yml_name"
-
-    # 4. Verify latest.yml advertises the correct version.
-    #    Возможен случай, когда workflow перепутал теги или закэшил старую сборку —
-    #    latest.yml укажет не на текущую версию, и клиенты не увидят обновление.
-    local latest_yml_url="https://github.com/${repo}/releases/download/${tag}/latest.yml"
-    local advertised_version="" yml_body_file yml_http_code
-    yml_body_file=$(mktemp 2>/dev/null || echo "/tmp/latest_yml.$$")
-    # CDN endpoint, не api.github.com — auth не нужна, но --write-out даёт явный HTTP-код.
-    yml_http_code=$(curl -sSL -o "$yml_body_file" -w '%{http_code}' "$latest_yml_url" 2>/dev/null || echo "000")
-    if [ "$yml_http_code" = "200" ]; then
-        advertised_version=$(awk -F': *' '/^version:/{gsub(/[ \r\t]+$/,"",$2); print $2; exit}' "$yml_body_file")
-    fi
-    rm -f "$yml_body_file"
-
-    if [ -z "$advertised_version" ]; then
-        log_warning "Could not fetch latest.yml from $latest_yml_url (HTTP ${yml_http_code})"
-        return 0
-    fi
-
-    if [ "$advertised_version" != "$version" ]; then
-        log_warning "latest.yml advertises version '${advertised_version}' but expected '${version}'"
-        log_info "Autoupdate clients may install a wrong version. Investigate the release pipeline."
-        return 0
-    fi
-
-    log_success "latest.yml advertises version ${version}"
-    log_success "Autoupdate is READY for installed clients (v${version})"
-    echo ""
-}
-
 # === MAIN ===
 
 main() {
@@ -1573,7 +1319,6 @@ main() {
     local bump_arg=""
     local auto_confirm="false"
     local custom_commit_msg=""
-    local skip_verify_autoupdate="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1587,13 +1332,9 @@ main() {
                     shift 2
                 else
                     log_error "--message requires an argument"
-                    echo "Usage: $0 [patch|minor|major] [--yes] [--message \"commit message\"] [--no-verify-autoupdate]"
+                    echo "Usage: $0 [patch|minor|major] [--yes] [--message \"commit message\"]"
                     exit 1
                 fi
-                ;;
-            --no-verify-autoupdate)
-                skip_verify_autoupdate="true"
-                shift
                 ;;
             patch|minor|major)
                 bump_arg="$1"
@@ -1601,7 +1342,7 @@ main() {
                 ;;
             *)
                 log_error "Unknown argument: $1"
-                echo "Usage: $0 [patch|minor|major] [--yes] [--message \"commit message\"] [--no-verify-autoupdate]"
+                echo "Usage: $0 [patch|minor|major] [--yes] [--message \"commit message\"]"
                 exit 1
                 ;;
         esac
@@ -1625,15 +1366,6 @@ main() {
     update_changelog "$NEW_VERSION" "$DATE"
     update_release_notes "$NEW_VERSION" "$DATE"
     execute_release
-
-    # Post-release verification: дожидаемся CI и проверяем что autoupdate-feed
-    # (latest.yml) опубликован. Без этого шага tag уезжает в remote, но
-    # установленные клиенты могут НЕ получить обновление, и команда об этом
-    # никак не сигнализирует. Скрипт не падает на FAIL — тег уже на remote;
-    # просто чёткое предупреждение и подсказка.
-    if [ "$skip_verify_autoupdate" != "true" ]; then
-        verify_autoupdate "$NEW_VERSION"
-    fi
 
     echo ""
     echo "╔═══════════════════════════════════════════════════════════╗"

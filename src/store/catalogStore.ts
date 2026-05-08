@@ -1,20 +1,17 @@
 /**
- * Zustand store каталога рулонов с persist через IPC.
+ * Zustand store каталога рулонов с persist в localStorage.
  *
- * Источник истины — `%APPDATA%\FloorCalc\data.json` (см. electron/main/storage.ts).
- * При старте renderer вызывает `load()`, который тянет каталог из main-процесса.
- * Любая мутация (add/remove/toggle) сразу пишет обновлённый каталог обратно
- * через `api.storage.saveCatalog`. Если запись падает — мы логируем ошибку,
+ * Источник истины — ключ `floorcalc:catalog:v1` в localStorage браузера.
+ * При старте renderer вызывает `load()`, который читает и валидирует через
+ * Zod. Любая мутация (add/remove/toggle) сразу пишет обновлённый каталог.
+ * Если запись падает (например, QuotaExceededError) — мы логируем ошибку,
  * но in-memory state не откатываем (UX: пользователь видит свой ввод).
- *
- * Канонический тип StoredCatalog лежит в @shared/ipc-contract — намеренно
- * импортируем оттуда, а не из src/domain/validation.ts (там legacy-копия,
- * см. CLAUDE.md / план — Phase 1 создавал свою копию параллельно).
  */
 
 import { create } from 'zustand';
-import type { RollType, StoredCatalog } from '@shared/ipc-contract';
-import { api } from '@/ipc/client';
+import type { RollType } from '@/domain/types';
+import type { StoredCatalog } from '@shared/catalogSchema';
+import { loadCatalog, saveCatalog } from '@/lib/storage/catalogStorage';
 
 interface CatalogState {
   rolls: RollType[];
@@ -39,7 +36,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
 
   load: async (): Promise<void> => {
     try {
-      const catalog = await api.storage.loadCatalog();
+      const catalog = await loadCatalog();
       set({
         rolls: catalog.rolls,
         selectedRollIds: new Set(catalog.selectedRollIds),
@@ -81,7 +78,7 @@ export const useCatalogStore = create<CatalogState>((set, get) => ({
   }
 }));
 
-/** Сериализует текущий state в StoredCatalog и пишет его в main через IPC. */
+/** Сериализует текущий state в StoredCatalog и пишет его в localStorage. */
 async function persist(state: CatalogState): Promise<void> {
   const catalog: StoredCatalog = {
     schemaVersion: 1,
@@ -89,7 +86,7 @@ async function persist(state: CatalogState): Promise<void> {
     selectedRollIds: Array.from(state.selectedRollIds)
   };
   try {
-    await api.storage.saveCatalog(catalog);
+    await saveCatalog(catalog);
   } catch (e) {
     // Ошибку не пробрасываем наверх: in-memory state уже обновлён,
     // повторная запись произойдёт при следующей мутации.

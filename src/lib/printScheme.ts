@@ -1,10 +1,15 @@
 /**
- * Подготовка HTML-документа для печати (схема + breakdown) и отправка
- * его в main-процесс через IPC. Main вызывает `webContents.print()` на
- * скрытом BrowserWindow с этим HTML.
+ * Подготовка HTML-документа для печати (схема + breakdown) и вызов
+ * системного диалога печати браузера.
+ *
+ * Реализация — скрытый iframe, в который мы записываем собранный HTML и
+ * вызываем `contentWindow.print()`. iframe выбран вместо `window.open` —
+ * последний триггерит popup-blocker (даже из click-handler в некоторых
+ * конфигурациях Chromium/Safari). Same-origin iframe такого ограничения не
+ * имеет.
  *
  * dataURL встраивается inline (PNG → base64) — это исключает зависимость
- * от webContents-сессии и ассет-резолвинга при печати.
+ * от ассет-резолвинга при печати.
  */
 
 export interface DataUrlExportable {
@@ -33,8 +38,47 @@ export async function printScheme(
     <div class="scheme"><img src="${dataUrl}" alt="Схема"></div>
   </div>
 </body></html>`;
-  const { api } = await import('@/ipc/client');
-  await api.files.print(html);
+
+  const iframe = document.createElement('iframe');
+  iframe.setAttribute('aria-hidden', 'true');
+  iframe.style.position = 'fixed';
+  iframe.style.right = '0';
+  iframe.style.bottom = '0';
+  iframe.style.width = '0';
+  iframe.style.height = '0';
+  iframe.style.border = '0';
+  iframe.style.opacity = '0';
+  document.body.appendChild(iframe);
+
+  const cw = iframe.contentWindow;
+  if (!cw) {
+    iframe.remove();
+    throw new Error('Не удалось открыть окно печати');
+  }
+
+  cw.document.open();
+  cw.document.write(html);
+  cw.document.close();
+
+  // Дожидаемся, пока document и встроенная картинка догрузятся.
+  await waitForIframeReady(iframe, cw);
+
+  cw.focus();
+  cw.print();
+
+  // Chrome блокирует синхронное удаление iframe в момент печати —
+  // оставляем небольшой запас, чтобы диалог печати успел появиться.
+  setTimeout(() => iframe.remove(), 1000);
+}
+
+async function waitForIframeReady(iframe: HTMLIFrameElement, cw: Window): Promise<void> {
+  if (cw.document.readyState !== 'complete') {
+    await new Promise<void>((resolve) => {
+      iframe.addEventListener('load', () => resolve(), { once: true });
+    });
+  }
+  // Дополнительный фрейм — гарантирует, что layout (включая <img src=dataURL>) применён.
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 function escapeHtml(s: string): string {

@@ -10,8 +10,7 @@
     "allowImportingTsExtensions": false
   },
   "include": [
-    "electron.vite.config.ts",
-    "vitest.config.ts",
-    "vite.config.ts"
+    "vite.config.ts",
+    "vitest.config.ts"
   ]
 }

@@ -2,12 +2,15 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <!-- CSP задаётся через session.webRequest.onHeadersReceived в electron/main/index.ts,
-         а не через meta-тег: при загрузке через file:// Chromium трактует 'self' как null
-         origin, что блокирует type="module" скрипты. Безопасность обеспечена contextIsolation
-         + sandbox + nodeIntegration:false на уровне BrowserWindow. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self'"
+    />
     <title>FloorCalc</title>
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#1f2937" />
   </head>
   <body>
     <div id="root"></div>
