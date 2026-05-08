@@ -63,7 +63,14 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; lines: string[]; pieceId: string | null } | null>(null);
+  // pinned=true: tooltip открыт тапом — mouseleave его не закрывает.
+  const [pinned, setPinned] = useState(false);
+  // Ref для актуального значения pinned — читается в Konva-замыканиях без
+  // добавления pinned в deps useEffect (перерисовка схемы дорогая операция).
+  const pinnedRef = useRef(false);
+  // Синхронизация pinnedRef с pinned state.
+  pinnedRef.current = pinned;
   // Актуальные размеры canvas — пересчитываются ResizeObserver'ом контейнера.
   // Стартовые значения = max-bounds, чтобы первый рендер не моргал нулевым размером.
   const [size, setSize] = useState<{ w: number; h: number }>({
@@ -150,6 +157,10 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
+
+    // Сбрасываем tooltip при каждой перерисовке (новые данные/размер).
+    setTooltip(null);
+    setPinned(false);
 
     stage.width(size.w);
     stage.height(size.h);
@@ -252,25 +263,79 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
         ? computeTooltipLines(piece, result.pieces, rollByTypeId, roll)
         : [];
 
+      // Вспомогательная функция: вычисляет позицию tooltip с clamp-ом
+      // по границам контейнера, чтобы не вылезал за пределы канваса.
+      const clampedPos = (rawX: number, rawY: number): { x: number; y: number } => {
+        const TW = 200; // приблизительная ширина tooltip
+        const TH = 60;  // приблизительная высота tooltip
+        const cw = container ? container.clientWidth : stage.width();
+        const ch = container ? container.clientHeight : stage.height();
+        const x = rawX + 14 + TW > cw ? rawX - 14 - TW : rawX + 14;
+        const y = rawY + 14 + TH > ch ? rawY - 14 - TH : rawY + 14;
+        return { x, y };
+      };
+
+      // Десктоп: hover показывает tooltip без pin — mouseleave закрывает.
       group.on('mouseenter mousemove', (e) => {
-        const stage = e.target.getStage();
-        if (!stage) return;
-        const pos = stage.getPointerPosition();
+        // Не перебиваем pinned-tooltip тапа.
+        if (pinnedRef.current) return;
+        const s = e.target.getStage();
+        if (!s) return;
+        const pos = s.getPointerPosition();
         if (!pos) return;
-        setTooltip({ x: pos.x + 14, y: pos.y + 14, lines: tooltipLines });
+        const { x, y } = clampedPos(pos.x, pos.y);
+        setTooltip({ x, y, lines: tooltipLines, pieceId: pieceId });
         if (container) container.style.cursor = 'pointer';
       });
       group.on('mouseleave', () => {
+        // Pinned-tooltip (тап) не закрываем при уходе мыши.
+        if (pinnedRef.current) return;
         setTooltip(null);
         if (container) container.style.cursor = 'default';
+      });
+
+      // Мобильный: tap открывает/закрывает tooltip (toggle по тому же piece).
+      group.on('click tap', (e) => {
+        // Останавливаем всплытие к stage-handler'у — он закрывает tooltip.
+        e.cancelBubble = true;
+        const s = e.target.getStage();
+        if (!s) return;
+        const pos = s.getPointerPosition();
+        if (!pos) return;
+
+        setTooltip((prev) => {
+          // Toggle: повторный тап по тому же piece закрывает tooltip.
+          if (prev?.pieceId === pieceId) {
+            setPinned(false);
+            if (container) container.style.cursor = 'default';
+            return null;
+          }
+          // Переключение или первый тап: показываем новый tooltip.
+          setPinned(true);
+          if (container) container.style.cursor = 'pointer';
+          const { x, y } = clampedPos(pos.x, pos.y);
+          return { x, y, lines: tooltipLines, pieceId: pieceId };
+        });
       });
 
       layer.add(group);
     }
 
     stage.add(layer);
-    // setTooltip стабилен (React-гарантия для state-setter'ов), добавлен явно для линтера.
-  }, [result, room, roll, catalog, size.w, size.h, setTooltip]);
+
+    // Тап/клик на пустое место Stage (вне piece-группы) → закрыть tooltip.
+    // Piece-группы останавливают всплытие через e.cancelBubble = true,
+    // поэтому сюда доходят только события на фоне канваса.
+    stage.on('click tap', (e) => {
+      if (e.target === stage) {
+        setTooltip(null);
+        setPinned(false);
+        if (container) container.style.cursor = 'default';
+      }
+    });
+
+    // setTooltip / setPinned стабильны (React-гарантия для state-setter'ов), добавлены явно для линтера.
+  }, [result, room, roll, catalog, size.w, size.h, setTooltip, setPinned]);
 
   return (
     <div
