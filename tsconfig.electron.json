@@ -15,7 +15,8 @@
   },
   "include": [
     "electron/**/*.ts",
-    "src/shared/**/*.ts"
+    "src/shared/**/*.ts",
+    "src/domain/types.ts"
   ],
   "exclude": ["node_modules", "out", "release", "dist"]
 }

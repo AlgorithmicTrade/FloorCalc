@@ -10,10 +10,8 @@ import { useCallback, useState, type FormEvent } from 'react';
 import { NumberField } from '@/components/design-system/NumberField';
 import { IconButton } from '@/components/design-system/IconButton';
 import { useCatalogStore } from '@/store/catalogStore';
+import { DIMENSION_MIN_MM, DIMENSION_MAX_MM } from '@shared/constants';
 import styles from './AddRollForm.module.css';
-
-const MIN_MM = 100;       // 0.10 м — минимально осмысленный размер
-const MAX_MM = 100_000;   // 100 м — верхняя граница, аналогичная ROOM_MAX_MM
 
 export function AddRollForm() {
   const addRoll = useCatalogStore((s) => s.addRoll);
@@ -40,7 +38,7 @@ export function AddRollForm() {
           valueMm={widthMm}
           onChangeMm={setWidthMm}
           minMm={0}
-          maxMm={MAX_MM}
+          maxMm={DIMENSION_MAX_MM}
           suffix="м"
           placeholder="ширина"
         />
@@ -51,7 +49,7 @@ export function AddRollForm() {
           valueMm={lengthMm}
           onChangeMm={setLengthMm}
           minMm={0}
-          maxMm={MAX_MM}
+          maxMm={DIMENSION_MAX_MM}
           suffix="м"
           placeholder="длина"
         />
@@ -60,7 +58,7 @@ export function AddRollForm() {
         type="submit"
         ariaLabel="Добавить рулон"
         size="md"
-        disabled={widthMm < MIN_MM || lengthMm < MIN_MM}
+        disabled={widthMm < DIMENSION_MIN_MM || lengthMm < DIMENSION_MIN_MM}
         style={{
           background: 'var(--color-accent)',
           color: 'var(--color-inverse-ink)',

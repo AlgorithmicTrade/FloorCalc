@@ -1,4 +1,6 @@
-export type RollType = { id: string; width: number; length: number };
+import type { RollType } from '../domain/types';
+
+export type { RollType };
 
 export type StoredCatalog = {
   schemaVersion: 1;

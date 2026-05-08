@@ -18,7 +18,7 @@ import type { FloorCalcAPI } from '@shared/ipc-contract';
  * Бросает Error в renderer если api недоступен — это невозможно восстановить
  * без перезапуска окна, так что лучше упасть громко.
  */
-export function getApi(): FloorCalcAPI {
+function getApi(): FloorCalcAPI {
   if (typeof window === 'undefined' || !window.api) {
     throw new Error('window.api is not available — preload script did not load');
   }

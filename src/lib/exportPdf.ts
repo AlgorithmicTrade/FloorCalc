@@ -16,10 +16,7 @@
 import { jsPDF } from 'jspdf';
 import robotoRegularUrl from '../../resources/fonts/Roboto-Regular.ttf?url';
 import type { SaveResult } from '@shared/ipc-contract';
-
-export interface PdfExportable {
-  toDataURL: () => string;
-}
+import type { DataUrlExportable } from './printScheme';
 
 const PDF_FONT_VFS_NAME = 'Roboto-Regular.ttf';
 const PDF_FONT_FAMILY = 'Roboto';
@@ -60,7 +57,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 }
 
 export async function exportPdf(
-  stage: PdfExportable | null,
+  stage: DataUrlExportable | null,
   text: string,
   filenameHint: string,
 ): Promise<SaveResult> {

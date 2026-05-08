@@ -1,21 +1,9 @@
 import { app } from 'electron';
 import { promises as fs } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { z } from 'zod';
 import { STORAGE_FILE, STORAGE_SCHEMA_VERSION } from '@shared/constants.js';
 import type { StoredCatalog } from '@shared/ipc-contract.js';
-
-const RollSchema = z.object({
-  id: z.string(),
-  width: z.number().int().positive(),
-  length: z.number().int().positive()
-});
-
-const CatalogSchema = z.object({
-  schemaVersion: z.literal(STORAGE_SCHEMA_VERSION),
-  rolls: z.array(RollSchema),
-  selectedRollIds: z.array(z.string())
-});
+import { CatalogSchema } from './schemas.js';
 
 function defaultCatalog(): StoredCatalog {
   return {

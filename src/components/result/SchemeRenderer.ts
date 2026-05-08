@@ -92,7 +92,7 @@ export const SCHEME_PALETTE = [
 ] as const;
 
 /** Цвет типоразмера рулона по его позиции в КАТАЛОГЕ (стабилен между расчётами). */
-export function getRollTypeColor(
+function getRollTypeColor(
   rollId: string,
   catalog: ReadonlyArray<{ id: string }>
 ): string {

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import styles from './Tabs.module.css';
 
-export interface Tab {
+interface Tab {
   id: string;
   label: ReactNode;
 }

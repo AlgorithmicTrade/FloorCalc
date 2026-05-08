@@ -12,6 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **PDF**: встроить Roboto TTF и убрать кириллические «крокозябры» в exportPdf (71c7c74)
 
+  Решение:
+  - jsPDF из коробки рендерит только Helvetica (Latin only) — текстовая колонка слева от схемы попадала в PDF как `?B8<0;L=K9 @568<` / потерянные глифы (комментарий в `src/lib/exportPdf.ts:6-12` явно фиксировал это как «MVP-приемлемо», что и стало багом).
+  - Встроен Roboto-Regular.ttf (Latin + Cyrillic + ×, ²) в `resources/fonts/`, регистрация через jsPDF Virtual File System (`addFileToVFS` + `addFont` + `setFont`).
+  - TTF подгружается лениво через `fetch(?url)` при первом экспорте, base64 кэшируется в module-scope; при ошибке загрузки промис сбрасывается для повторной попытки.
+
+  Изменения:
+  - resources/fonts/Roboto-Regular.ttf:
+    - Новый файл (515 KB, Apache 2.0). Magic-байты `00 01 00 00` (валидный TrueType). Cyrillic glyph coverage подтверждён через `jsPDF.getStringUnitWidth` — все ширины для П/о/м/щ/×/² > 0.
+  - src/lib/exportPdf.ts:
+    - `loadEmbeddedFontBase64()`: fetch TTF + chunked btoa (chunks по 32 КБ) для безопасной base64-конверсии 515 КБ-файла без `RangeError: Maximum call stack size exceeded`.
+    - `exportPdf()`: `doc.addFileToVFS('Roboto-Regular.ttf', base64)` → `addFont(..., 'Roboto', 'normal')` → `setFont('Roboto', 'normal')` до `doc.text(...)`.
+    - Обновлён header-комментарий: «cyrillic via embedded TTF» вместо прежнего «MVP fallback to Helvetica».
+  - src/css-modules.d.ts:
+    - `declare module '*.ttf?url' { const url: string; export default url }` — ambient для Vite asset-query (`tsconfig.web.json: types: []` не подтягивает `vite/client`).
+
+  Эффект:
+  - Кириллический breakdown в PDF (Помещение, Рулон, Кусков, Обрезки, единицы м/м²) рендерится глифами Roboto без подмен. Verified: `npm run typecheck` PASS, `npx electron-vite build` PASS, TTF корректно эмитирован в `out/renderer/assets/Roboto-Regular-DPspvn0D.ttf` (515.10 КБ). Cyrillic widths > 0 для всех тестовых глифов.
+  - Размер renderer-bundle: +515 КБ на отдельный TTF-asset (lazy-fetch при первом PDF), JS-bundle не изменился.
+  - PNG-экспорт и Печать (Chromium) затронуты не были — там кириллица работала и раньше.
+
 ## [1.0.12] - 2026-05-08
 
 ### Security

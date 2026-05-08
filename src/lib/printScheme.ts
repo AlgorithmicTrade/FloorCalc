@@ -7,12 +7,12 @@
  * от webContents-сессии и ассет-резолвинга при печати.
  */
 
-export interface PrintExportable {
+export interface DataUrlExportable {
   toDataURL: () => string;
 }
 
 export async function printScheme(
-  stage: PrintExportable | null,
+  stage: DataUrlExportable | null,
   text: string,
 ): Promise<void> {
   if (!stage) return;

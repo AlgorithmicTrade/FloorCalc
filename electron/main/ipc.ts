@@ -1,22 +1,10 @@
 import { app, type BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '@shared/ipc-contract.js';
-import { STORAGE_SCHEMA_VERSION } from '@shared/constants.js';
 import { loadCatalog, saveCatalog } from './storage.js';
 import { printHtml, savePdf, savePng } from './files.js';
 import type { UpdaterService } from './updater.js';
-
-const RollSchema = z.object({
-  id: z.string(),
-  width: z.number().int().positive(),
-  length: z.number().int().positive()
-});
-
-const CatalogSchema = z.object({
-  schemaVersion: z.literal(STORAGE_SCHEMA_VERSION),
-  rolls: z.array(RollSchema),
-  selectedRollIds: z.array(z.string())
-});
+import { CatalogSchema } from './schemas.js';
 
 // CWE-20 / CWE-770 / CWE-1287: валидация входных данных на IPC-границе
 const SaveBufferArgs = z.tuple([

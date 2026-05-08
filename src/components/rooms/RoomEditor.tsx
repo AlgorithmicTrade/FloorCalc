@@ -9,10 +9,8 @@ import { TextInput } from '@/components/design-system/TextInput';
 import { NumberField } from '@/components/design-system/NumberField';
 import { IconButton } from '@/components/design-system/IconButton';
 import { useRoomsStore, selectActiveRoom } from '@/store/roomsStore';
+import { DIMENSION_MAX_MM } from '@shared/constants';
 import styles from './RoomEditor.module.css';
-
-const ROOM_MIN_MM = 100;       // 0.10 м
-const ROOM_MAX_MM = 100_000;   // 100 м
 
 export function RoomEditor() {
   const activeRoom = useRoomsStore(selectActiveRoom);
@@ -56,7 +54,7 @@ export function RoomEditor() {
               valueMm={activeRoom.width}
               onChangeMm={(mm) => updateRoom(activeRoom.id, { width: mm })}
               minMm={0}
-              maxMm={ROOM_MAX_MM}
+              maxMm={DIMENSION_MAX_MM}
               suffix="м"
             />
           </label>
@@ -90,7 +88,7 @@ export function RoomEditor() {
               valueMm={activeRoom.length}
               onChangeMm={(mm) => updateRoom(activeRoom.id, { length: mm })}
               minMm={0}
-              maxMm={ROOM_MAX_MM}
+              maxMm={DIMENSION_MAX_MM}
               suffix="м"
             />
           </label>
@@ -99,6 +97,3 @@ export function RoomEditor() {
     </Card>
   );
 }
-
-// Экспортируем константы — могут пригодиться в тестах / других компонентах.
-export { ROOM_MIN_MM, ROOM_MAX_MM };
