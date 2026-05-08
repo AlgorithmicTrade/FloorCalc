@@ -2,6 +2,18 @@
 
 User-facing release notes for all versions.
 
+## v1.0.13
+
+_Released on 2026-05-08_
+
+### 🐛 Bug Fixes
+
+- **PDF**: встроить Roboto TTF и убрать кириллические «крокозябры» в exportPdf
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.0.12
 
 _Released on 2026-05-08_

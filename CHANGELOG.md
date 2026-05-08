@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.13] - 2026-05-08
+
+### Fixed
+- **PDF**: встроить Roboto TTF и убрать кириллические «крокозябры» в exportPdf (71c7c74)
+
 ## [1.0.12] - 2026-05-08
 
 ### Security
