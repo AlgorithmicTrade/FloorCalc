@@ -7,6 +7,13 @@
  * строкой намеренно: семантика «отличается от текущей сборки» точнее,
  * чем semver-сравнение, и не требует парсера.
  *
+ * Дополнительно к 10-минутному `setInterval` версия проверяется
+ * опортунистически по событиям `focus`, `visibilitychange` (при возврате
+ * вкладки в `visible`) и `online` — это ускоряет детект новой версии,
+ * когда вкладка долго была свёрнута или соединение временно пропадало.
+ * Чтобы при быстрых focus/blur и переключении вкладок не было спама,
+ * опортунистические запуски ограничены throttle-окном 30 секунд.
+ *
  * `__APP_VERSION__` — vite-define из `package.json:version`, заменяется
  * на литерал в build-time.
  */
@@ -47,7 +54,11 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   isDismissed: false,
 
   initialize: (): (() => void) => {
+    let lastTickAt = 0;
+    const THROTTLE_MS = 30_000;
+
     const tick = async (): Promise<void> => {
+      lastTickAt = Date.now();
       const remote = await fetchRemoteVersion();
       if (!remote) return;
       const state = get();
@@ -55,9 +66,29 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
         set({ next: remote, isDismissed: false });
       }
     };
+
+    // Опортунистический tick по событиям, с throttle 30с.
+    const opportunisticTick = (): void => {
+      if (Date.now() - lastTickAt < THROTTLE_MS) return;
+      void tick();
+    };
+
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') opportunisticTick();
+    };
+
     void tick();
     const id = window.setInterval(() => void tick(), POLL_MS);
-    return () => window.clearInterval(id);
+    window.addEventListener('focus', opportunisticTick);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener('online', opportunisticTick);
+
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener('focus', opportunisticTick);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener('online', opportunisticTick);
+    };
   },
 
   dismiss: (): void => set({ isDismissed: true })

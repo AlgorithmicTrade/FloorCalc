@@ -5,7 +5,7 @@
  *  1) Считает ключ кеша через `hashCalculationKey()`.
  *  2) Tries cache-hit → если null, вызывает `selectBestRoll(...)` и кеширует.
  *  3) Если `activeRolls.length === 0` — рендерит EmptyState («выберите рулон»).
- *  4) Layout: заголовок (Eyebrow + warnings-tooltip-«*») → SchemeView (схема + stats-строка
+ *  4) Layout: заголовок (ModeTitleWithTooltip + warnings-mark-«*») → SchemeView (схема + stats-строка
  *     внизу схемы) → ResultActions (compact icon-buttons). ResultText скрыт через
  *     visually-hidden как a11y-fallback.
  *
@@ -13,9 +13,8 @@
  * (`resultsCache`), переживёт re-mount табов / переключение помещений.
  */
 
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { Card } from '@/components/design-system/Card';
-import { Eyebrow } from '@/components/design-system/Eyebrow';
 import { EmptyState } from '@/components/layout/EmptyState';
 import { selectMixed } from '@/domain/calculator';
 import { formatM } from '@/domain/units';
@@ -43,6 +42,77 @@ const MODE_TOOLTIPS: Record<Mode, string> = {
   economy: 'Подбирается экономная раскладка с меньшим кол-вом рулонов',
   optimal: 'Подбирается оптимальная раскладка с меньшим кол-вом кусков',
 };
+
+interface ModeTitleWithTooltipProps {
+  mode: Mode;
+  /** Человекочитаемое название режима */
+  title: string;
+  /** Текст подсказки */
+  tooltip: string;
+}
+
+/**
+ * Кликабельный заголовок режима с inline-попапом подсказки.
+ *
+ * - Клик/Enter/Space → toggle попапа.
+ * - Escape → закрыть.
+ * - Клик вне контейнера → закрыть.
+ * - `title=""` на `<Eyebrow>` НЕ используется; вся семантика через aria-атрибуты.
+ */
+function ModeTitleWithTooltip({ mode, title, tooltip }: ModeTitleWithTooltipProps) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const tooltipId = `mode-tooltip-${mode}`;
+
+  // Закрытие при клике вне контейнера
+  const handleOutsideClick = useCallback((e: MouseEvent) => {
+    if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+      setOpen(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    } else {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+    };
+  }, [open, handleOutsideClick]);
+
+  // Закрытие по Escape
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (e.key === 'Escape') {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className={styles.modeTitle} ref={containerRef}>
+      <button
+        type="button"
+        className={`t-eyebrow ${styles.modeTitleBtn}`}
+        aria-expanded={open}
+        aria-controls={tooltipId}
+        onClick={() => setOpen((prev) => !prev)}
+        onKeyDown={handleKeyDown}
+      >
+        {title}
+      </button>
+      {open && (
+        <div
+          id={tooltipId}
+          role="tooltip"
+          className={styles.modeTooltip}
+        >
+          {tooltip}
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface CalcOutcome {
   result: CalculationResult;
@@ -86,7 +156,11 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
   if (!outcome) {
     return (
       <Card surface="surface-1" padding="md">
-        <Eyebrow>{modeTitle}</Eyebrow>
+        <ModeTitleWithTooltip
+          mode={mode}
+          title={modeTitle}
+          tooltip={MODE_TOOLTIPS[mode]}
+        />
         <EmptyState
           title="Выберите рулон"
           hint="Активируйте хотя бы один типоразмер из каталога слева."
@@ -109,7 +183,11 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
     <Card surface="surface-1" padding="md" className={styles.card}>
       <div className={styles.header}>
         <div className={styles.headerLeft}>
-          <Eyebrow title={MODE_TOOLTIPS[mode]}>{modeTitle}</Eyebrow>
+          <ModeTitleWithTooltip
+            mode={mode}
+            title={modeTitle}
+            tooltip={MODE_TOOLTIPS[mode]}
+          />
           {hasWarnings && (
             <span
               className={styles.warnMark}

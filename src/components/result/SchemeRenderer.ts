@@ -71,6 +71,8 @@ export type SchemeNode =
       kind: 'statsItemText';
       x: number;
       y: number;
+      /** Высота bounding-box текста — нужна для verticalAlign:'middle' в Konva. */
+      height: number;
       text: string;
       fontSize: number;
     };
@@ -309,6 +311,7 @@ export function renderScheme(
         kind: 'statsItemText',
         x: curX,
         y: row2Y,
+        height: STATS_LINE_HEIGHT,
         text: cell.text,
         fontSize: DETAIL_FONT_SIZE,
       });

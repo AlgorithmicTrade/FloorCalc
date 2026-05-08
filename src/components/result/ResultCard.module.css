@@ -40,8 +40,75 @@
   outline-offset: 2px;
 }
 
-/* a11y-fallback: скрываем текстовую статистику визуально,
-   т.к. она дублируется внутри Konva stage (попадает в экспорт). */
+/* ── ModeTitleWithTooltip ─────────────────────────────────────── */
+
+/* Обёртка — позиционный контекст для абсолютного попапа */
+.modeTitle {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+/**
+ * Кнопка-триггер: наследует стили .t-eyebrow (применяются через className),
+ * добавляем dotted-underline и pointer-курсор.
+ */
+.modeTitleBtn {
+  /* Сброс браузерных дефолтов кнопки */
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;           /* наследуем .t-eyebrow через className */
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  /* Визуальный маркер кликабельности */
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--color-ink-subtle);
+  text-underline-offset: 3px;
+}
+
+.modeTitleBtn:hover {
+  text-decoration-color: var(--color-ink-muted);
+}
+
+.modeTitleBtn:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Попап подсказки — inline под кнопкой, token-driven */
+.modeTooltip {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  /* ограничение ширины: не выходит за карточку на мобильном */
+  min-width: 180px;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: var(--space-xs) var(--space-sm);     /* 8px 12px */
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-hairline-soft);
+  border-radius: var(--r-sm);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--color-ink-muted);
+  /* Попап поверх Konva-canvas */
+  z-index: 20;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  /* Запретить выделение (чтобы tap не выделял текст на мобильном) */
+  user-select: none;
+  /* Предотвращаем схлопывание при overflow родителя */
+  pointer-events: auto;
+}
+
+/* ── a11y-fallback: скрываем текстовую статистику визуально, ─── */
+/* т.к. она дублируется внутри Konva stage (попадает в экспорт). */
 .visuallyHidden {
   position: absolute;
   width: 1px;

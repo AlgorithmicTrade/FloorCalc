@@ -42,8 +42,12 @@ export interface SchemeViewProps {
   className?: string;
   /**
    * Соотношение сторон помещения (room.length / room.width) для адаптации
-   * высоты канваса. Для вытянутых вертикальных помещений (> 1.5) увеличивает
-   * высоту stage, чтобы scale был больше и метки кусков были видны.
+   * высоты канваса. Применяется ТОЛЬКО на узких (мобильных) канвасах
+   * (cw < 480) — там вертикальные помещения требуют большей высоты, чтобы
+   * scale был достаточным для меток кусков. На десктопе (cw >= 480) ширина
+   * 640px достаточно велика, чтобы любая комната помещалась с нормальным
+   * масштабом при 9:16, поэтому roomAspect игнорируется и используется
+   * фиксированный aspect из widthPx/heightPx.
    * Если не задан — используется фиксированный aspect из widthPx/heightPx.
    */
   roomAspect?: number;
@@ -108,19 +112,23 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
     if (!container) return;
 
     // Расчёт размеров от ширины контейнера, aspect maxHeightPx/maxWidthPx, capped maxWidthPx.
-    // Если передан roomAspect (room.length / room.width), адаптируем высоту канваса:
-    //   - для вытянутых вертикальных помещений (roomAspect > 1.5) увеличиваем высоту,
-    //     чтобы scale был больше и метки кусков умещались.
-    //   - Clamp aspect в диапазон [9/16 .. 2.0], чтобы канвас не стал бесконечно высоким.
+    // roomAspect-адаптация применяется ТОЛЬКО на узких (мобильных) канвасах
+    // (cw < 480 — порог согласован с SchemeRenderer.getMargin(), мобильный
+    // breakpoint). На десктопе (cw >= 480) ширина уже достаточно велика,
+    // чтобы любая комната помещалась с нормальным масштабом при 9:16,
+    // а растягивание канваса по roomAspect создавало пустой void и ломало
+    // UX (две карточки результата занимали ~2 экрана).
+    //   - На мобильном: clamp aspect в [9/16 .. 2.0] от roomAspect, чтобы
+    //     вертикальные комнаты получили достаточно высоты для scale, а
+    //     горизонтальные не превысили 16:9.
+    //   - На десктопе: aspect = maxHeightPx / maxWidthPx (= 9/16 при дефолте 360/640).
     //   - Минимум 240×180 — иначе stats-text внизу схемы перестаёт читаться.
     const calcSize = (): { w: number; h: number } => {
       const cw = Math.max(240, Math.min(container.clientWidth, maxWidthPx));
       let aspect = maxHeightPx / maxWidthPx;
-      if (roomAspect !== undefined) {
-        // roomAspect = length/width: >1 — вертикальное помещение, <1 — горизонтальное.
-        // Целевой aspect канваса = clamp(roomAspect, 9/16, 2.0).
-        // Таким образом горизонтальные комнаты не превысят 16:9 высоту,
-        // а вертикальные получат до 1:2 — достаточно для scale.
+      if (roomAspect !== undefined && cw < 480) {
+        // Мобильный-only: clamp aspect в [9/16 .. 2.0], чтобы канвас не стал
+        // бесконечно высоким и горизонтальные комнаты не превысили 16:9.
         const minAspect = 9 / 16;   // ~0.5625 — минимум (шире чем 16:9 не делаем)
         const maxAspect = 2.0;      // максимум — 1:2 (height = 2*width)
         aspect = Math.max(minAspect, Math.min(maxAspect, roomAspect));
@@ -451,9 +459,12 @@ function buildStaticKonvaNode(
 
     case 'statsItemText':
       // Текст ячейки типоразмера во второй строке stats.
+      // height обязателен для verticalAlign:'middle' в Konva — без явной height
+      // text-box рендерится с top-edge на y, и verticalAlign игнорируется.
       return new Konva.Text({
         x: node.x,
         y: node.y,
+        height: node.height,
         text: node.text,
         fontSize: node.fontSize,
         fill: STATS_TEXT_FILL_DETAIL,
