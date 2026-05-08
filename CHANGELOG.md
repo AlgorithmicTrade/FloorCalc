@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.4] - 2026-05-08
+
+### Added
+- **Web**: кликабельная подсказка режима, collapse-сайдбар, отзывчивый updater и UX-фиксы схемы (c85eb75)
+
+  Решение:
+  - В ResultCard заменить нативный browser-tooltip на кликабельный inline-popup с описанием режима: dotted-underline + cursor:pointer + ARIA, toggle/Escape/click-outside.
+  - Применять roomAspect-адаптацию канваса схемы только на узких (мобильных) канвасах (cw<480), на десктопе вернуть фиксированный aspect 9:16 — устраняет регрессию «две схемы занимают ~2 экрана» на десктопе для квадратных и вертикальных комнат.
+  - Выровнять цветной swatch со строкой текста во второй строке статистики: statsItemText получил обязательное поле height, в Konva.Text используется verticalAlign:'middle' с явной height — центры swatch и текста теперь совпадают.
+  - Добавить кнопку сворачивания/разворачивания левой панели для двухколоночного layout (≥768px), с inline-SVG chevron, persist состояния в localStorage, плавной анимацией grid-template-columns; mobile portrait не затронут.
+  - Сделать updater отзывчивым: к 10-минутному setInterval добавлены опортунистические триггеры на focus/visibilitychange/online с throttle 30с — новая версия детектится при возвращении к вкладке и после восстановления сети.
+  - Полностью переписать README.md и CLAUDE.md под web-архитектуру (Vite SPA, GitHub Pages, deploy-pages.yml, localStorage persistence, polling version.json) — все следы Electron-стека удалены или явно помечены как устаревшие.
+  
+  Изменения:
+  - src/components/result/ResultCard.tsx: inline-компонент ModeTitleWithTooltip с toggle/Escape/click-outside, удалён импорт Eyebrow.
+  - src/components/result/ResultCard.module.css: .modeTitle/.modeTitleBtn/.modeTooltip с dotted-underline и token-driven popup.
+  - src/components/result/SchemeView.tsx: calcSize применяет roomAspect только при cw<480; case statsItemText получил height для verticalAlign.
+  - src/components/result/SchemeRenderer.ts: SchemeNode.statsItemText расширен полем height; push передаёт height=STATS_LINE_HEIGHT.
+  - src/App.tsx: SIDEBAR_STORAGE_KEY persist, useState lazy-init, кнопка sidebarToggle с inline-SVG chevron и ARIA.
+  - src/components/layout/AppShell.tsx: prop sidebarCollapsed, класс .shellCollapsed, id=sidebar-aside + aria-hidden.
+  - src/components/layout/AppShell.module.css: transition grid/padding/opacity, .sidebarToggle fixed-overlay в @media (min-width:768px).
+  - src/store/updateStore.ts: initialize дополнен throttle-30с opportunisticTick по focus/visibilitychange/online + cleanup всех слушателей.
+  - README.md, CLAUDE.md: полная перезапись под Vite SPA + GitHub Pages, удалены упоминания Electron/IPC/portable.exe/build:safe.
+  
+  Эффект:
+  - На десктопе высота карточек результата вернулась к 9:16 — обе схемы умещаются в экран; мобильное поведение сохранено.
+  - Заголовок режима визуально маркирован как кликабельный, единое поведение на десктопе и touch.
+  - Swatch и текст «WxL — N шт.» выровнены по центру (row2Y+11).
+  - Двухколоночный layout получил кнопку collapse с persistence; mobile portrait не затронут.
+  - Уведомление о новой версии появляется при возврате к вкладке/восстановлении сети с throttle 30с.
+  - Документация синхронизирована с web-стеком — нет устаревших Electron-инструкций.
+  - Quality gates: typecheck 0; Vitest 196/196; Vite build ~2.75s.
+
 ## [1.1.3] - 2026-05-08
 
 ### Fixed
