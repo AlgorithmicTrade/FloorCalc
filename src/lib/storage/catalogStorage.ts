@@ -7,15 +7,20 @@
  */
 
 import { CatalogSchema, type StoredCatalog } from '@shared/catalogSchema';
-import { STORAGE_SCHEMA_VERSION } from '@shared/constants';
+import { PRESET_ROLLS, STORAGE_SCHEMA_VERSION } from '@shared/constants';
 
 const STORAGE_KEY = 'floorcalc:catalog:v1';
 
+/**
+ * Каталог-по-умолчанию: типоразмеры из `PRESET_ROLLS`, все выбранные.
+ * Возвращается при отсутствии записи в localStorage (первый запуск) и при
+ * фатальной ошибке чтения/валидации — чтобы пользователь сразу мог считать.
+ */
 function defaultCatalog(): StoredCatalog {
   return {
     schemaVersion: STORAGE_SCHEMA_VERSION,
-    rolls: [],
-    selectedRollIds: []
+    rolls: PRESET_ROLLS.map((r) => ({ ...r })),
+    selectedRollIds: PRESET_ROLLS.map((r) => r.id)
   };
 }
 

@@ -136,6 +136,7 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
         catalog={fullCatalog}
         widthPx={640}
         heightPx={360}
+        roomAspect={room.length / room.width}
       />
     </Card>
   );

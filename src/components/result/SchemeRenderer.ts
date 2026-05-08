@@ -36,7 +36,7 @@ export type SchemeNode =
       /** Уникальный идентификатор куска — используется для группировки в SchemeView. */
       pieceId: string;
     }
-  | { kind: 'roomLabel'; x: number; y: number; text: string }
+  | { kind: 'roomLabel'; x: number; y: number; text: string; fontSize: number }
   | {
       kind: 'pieceLabel';
       x: number;
@@ -101,7 +101,18 @@ function getRollTypeColor(
   return SCHEME_PALETTE[safe % SCHEME_PALETTE.length] ?? SCHEME_PALETTE[0]!;
 }
 
-const MARGIN = 40;             // отступ для размерных подписей сверху/слева/справа
+/** Адаптивный отступ: на узких канвасах (< 480px) уменьшаем margin до 20px,
+ *  чтобы больше площади отдать под схему. */
+function getMargin(stageWidth: number): number {
+  return stageWidth < 480 ? 20 : 40;
+}
+
+/** Размер шрифта roomLabel зависит от margin: при 20px нужен более мелкий шрифт,
+ *  чтобы подпись умещалась в отступе. */
+function getRoomLabelFontSize(stageWidth: number): number {
+  return stageWidth < 480 ? 11 : 12;
+}
+
 const STATS_LINE_HEIGHT = 22;  // высота одной строки статистики
 const STATS_LINES = 2;         // 2 строки: общая + детальная по типам
 const STATS_BLOCK_HEIGHT = STATS_LINE_HEIGHT * STATS_LINES;
@@ -123,6 +134,8 @@ export function renderScheme(
   if (room.width <= 0 || room.length <= 0) {
     return { stageWidth, stageHeight, nodes };
   }
+
+  const MARGIN = getMargin(stageWidth);
 
   // Зона схемы — весь stage за вычетом нижнего блока статистики.
   const schemeZoneH = stageHeight - STATS_BLOCK_HEIGHT;
@@ -174,20 +187,22 @@ export function renderScheme(
     // Номер рулона (1-based). На схеме отображается только он —
     // размеры кусков не показываются как подписи (доступны в hover-tooltip).
     //
-    // Порог 8px — минимум, при котором одиночная цифра читаема при fontSize=7.
+    // Порог 5px — минимум, при котором одиночная цифра читаема при fontSize=6
+    // (одиночный digit ≈ 3.3px ширина, укладывается в 5×5 box).
     // fontSize адаптируется к min(w, h), чтобы корректно работать на кусках
-    // с малой высотой (полосы 1м при scale~11px/m) и на узких кусках (1.2м ширина).
+    // с малой высотой (полосы 1м при scale~4px/m на мобильных) и на узких кусках.
     // Для многозначных номеров (≥10) дополнительно ограничиваем по ширине:
     //   digits * 0.55 * fontSize ≤ w - 2.
     const minSide = Math.min(w, h);
-    if (minSide >= 8) {
+    if (minSide >= 5) {
       const digits = String(p.rollIndex + 1).length;
-      const baseFs = h < 18 ? 8 : h < 30 ? 11 : h < 60 ? 14 : 18;
+      // Расширенная шкала baseFs: добавлен уровень 6px для очень маленьких кусков.
+      const baseFs = h < 12 ? 6 : h < 18 ? 8 : h < 30 ? 11 : h < 60 ? 14 : 18;
       // Текст должен помещаться по ширине: digits * 0.55 * fontSize ≤ w - 2.
       const maxFsByWidth = Math.floor((w - 2) / (0.55 * Math.max(1, digits)));
       // Текст должен помещаться по высоте с минимальным зазором.
       const maxFsByHeight = Math.floor(h - 2);
-      const pieceLabelFontSize = Math.max(7, Math.min(baseFs, maxFsByWidth, maxFsByHeight));
+      const pieceLabelFontSize = Math.max(5, Math.min(baseFs, maxFsByWidth, maxFsByHeight));
       nodes.push({
         kind: 'pieceLabel',
         x,
@@ -202,17 +217,22 @@ export function renderScheme(
   }
 
   // Размер ширины помещения (сверху по центру) и длины (слева по центру).
+  const roomLabelFontSize = getRoomLabelFontSize(stageWidth);
+  // При уменьшенном margin (20px) корректируем вертикальный отступ подписи ширины.
+  const labelTopOffset = MARGIN >= 30 ? 22 : 14;
   nodes.push({
     kind: 'roomLabel',
     x: offsetX + roomPxW / 2 - 30,
-    y: offsetY - 22,
+    y: offsetY - labelTopOffset,
     text: formatMTrim(room.width),
+    fontSize: roomLabelFontSize,
   });
   nodes.push({
     kind: 'roomLabel',
-    x: offsetX - 36,
+    x: offsetX - MARGIN + 2,
     y: offsetY + roomPxH / 2 - 8,
     text: formatMTrim(room.length),
+    fontSize: roomLabelFontSize,
   });
 
   // === Stats: 2 строки ===

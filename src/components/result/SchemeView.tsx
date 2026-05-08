@@ -40,6 +40,13 @@ export interface SchemeViewProps {
   widthPx?: number;
   heightPx?: number;
   className?: string;
+  /**
+   * Соотношение сторон помещения (room.length / room.width) для адаптации
+   * высоты канваса. Для вытянутых вертикальных помещений (> 1.5) увеличивает
+   * высоту stage, чтобы scale был больше и метки кусков были видны.
+   * Если не задан — используется фиксированный aspect из widthPx/heightPx.
+   */
+  roomAspect?: number;
 }
 
 const FRAME_STROKE = '#3b3d45';
@@ -51,7 +58,7 @@ const STATS_TEXT_FILL = '#cfd2d8';
 const STATS_TEXT_FILL_DETAIL = '#9aa0aa';
 
 export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function SchemeView(
-  { result, room, roll, catalog, widthPx: maxWidthPx = 640, heightPx: maxHeightPx = 360, className = '' },
+  { result, room, roll, catalog, widthPx: maxWidthPx = 640, heightPx: maxHeightPx = 360, roomAspect, className = '' },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -94,10 +101,23 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
     if (!container) return;
 
     // Расчёт размеров от ширины контейнера, aspect maxHeightPx/maxWidthPx, capped maxWidthPx.
-    // Минимум 240×180 — иначе stats-text внизу схемы перестаёт читаться.
+    // Если передан roomAspect (room.length / room.width), адаптируем высоту канваса:
+    //   - для вытянутых вертикальных помещений (roomAspect > 1.5) увеличиваем высоту,
+    //     чтобы scale был больше и метки кусков умещались.
+    //   - Clamp aspect в диапазон [9/16 .. 2.0], чтобы канвас не стал бесконечно высоким.
+    //   - Минимум 240×180 — иначе stats-text внизу схемы перестаёт читаться.
     const calcSize = (): { w: number; h: number } => {
       const cw = Math.max(240, Math.min(container.clientWidth, maxWidthPx));
-      const aspect = maxHeightPx / maxWidthPx;
+      let aspect = maxHeightPx / maxWidthPx;
+      if (roomAspect !== undefined) {
+        // roomAspect = length/width: >1 — вертикальное помещение, <1 — горизонтальное.
+        // Целевой aspect канваса = clamp(roomAspect, 9/16, 2.0).
+        // Таким образом горизонтальные комнаты не превысят 16:9 высоту,
+        // а вертикальные получат до 1:2 — достаточно для scale.
+        const minAspect = 9 / 16;   // ~0.5625 — минимум (шире чем 16:9 не делаем)
+        const maxAspect = 2.0;      // максимум — 1:2 (height = 2*width)
+        aspect = Math.max(minAspect, Math.min(maxAspect, roomAspect));
+      }
       const ch = Math.max(180, Math.round(cw * aspect));
       return { w: cw, h: ch };
     };
@@ -124,7 +144,7 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
       stage.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxWidthPx, maxHeightPx]);
+  }, [maxWidthPx, maxHeightPx, roomAspect]);
 
   // Перерисовываем схему при изменении данных или размера контейнера.
   useEffect(() => {
@@ -202,6 +222,11 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
           fill: PIECE_LABEL_FILL,
           align: 'center',
           verticalAlign: 'middle',
+          // Белая обводка повышает читаемость цифр на любом цвете куска,
+          // особенно на мелких кусках с fontSize 5–8px.
+          stroke: 'rgba(255,255,255,0.75)',
+          strokeWidth: 1,
+          fillAfterStrokeEnabled: true,
           listening: false,
         });
         continue;
@@ -324,7 +349,7 @@ function buildStaticKonvaNode(
         x: node.x,
         y: node.y,
         text: node.text,
-        fontSize: 12,
+        fontSize: node.fontSize,
         fill: ROOM_LABEL_FILL,
         listening: false,
       });

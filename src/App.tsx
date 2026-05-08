@@ -35,6 +35,9 @@ export function App() {
 
   return (
     <>
+      <span className={styles.versionBadge} aria-label="Версия приложения">
+        v{__APP_VERSION__}
+      </span>
       <AppShell
         left={
           <div className={styles.leftColumn}>

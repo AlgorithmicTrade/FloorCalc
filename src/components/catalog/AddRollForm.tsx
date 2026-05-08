@@ -32,7 +32,8 @@ export function AddRollForm() {
 
   return (
     <form className={styles.form} onSubmit={submit}>
-      <div className={styles.field}>
+      <label className={styles.label}>
+        <span className={styles.labelText}>Ширина рулона</span>
         <NumberField
           aria-label="Ширина нового рулона, м"
           valueMm={widthMm}
@@ -42,8 +43,9 @@ export function AddRollForm() {
           suffix="м"
           placeholder="ширина"
         />
-      </div>
-      <div className={styles.field}>
+      </label>
+      <label className={styles.label}>
+        <span className={styles.labelText}>Длина рулона</span>
         <NumberField
           aria-label="Длина нового рулона, м"
           valueMm={lengthMm}
@@ -53,7 +55,7 @@ export function AddRollForm() {
           suffix="м"
           placeholder="длина"
         />
-      </div>
+      </label>
       <IconButton
         type="submit"
         ariaLabel="Добавить рулон"

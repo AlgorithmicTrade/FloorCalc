@@ -6,6 +6,9 @@
   overflow-x: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
+  /* Ограничиваем touch-action горизонтальным паном — иначе диагональный свайп
+     перехватывается overflow-x: auto контейнером и блокирует вертикальный scroll. */
+  touch-action: pan-x;
 }
 
 .row::-webkit-scrollbar {
@@ -23,6 +26,9 @@
   transition: color 120ms, border-color 120ms;
   white-space: nowrap;
   flex-shrink: 0;
+  /* manipulation = разрешить tap и скролл, убрать double-tap zoom задержку.
+     Наследует pan-x от .row, но позволяет tap-events на самих кнопках. */
+  touch-action: manipulation;
 }
 
 .tab:hover {
