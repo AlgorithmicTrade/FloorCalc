@@ -2,6 +2,44 @@
 
 User-facing release notes for all versions.
 
+## v1.0.11
+
+_Released on 2026-05-08_
+
+### 🐛 Bug Fixes
+
+- **Updater**: встроить app-update.yml в portable.exe и переключить verify_autoupdate на authenticated GitHub API
+
+  Решение:
+  - Корневая причина «у меня запущена 1.0.9, обновление до 1.0.10 не предлагается» — electron-builder@25.1.8 для target:portable не встраивает app-update.yml внутрь portable.exe (verified 7z-extraction трёх портаблов: GitHub v1.0.10, GitHub v1.0.9, локальный v1.0.9 — во всех в resources/ есть только app.asar и elevate.exe). На клиенте isUpdateConfigPresent() в electron/main/updater.ts:19-21 возвращает false, и автоапдейтер тихо отключается с записью «[updater] disabled: app-update.yml not found». Так было во всех релизах — фикс универсальный.
+  - Решение: статичный build/app-update.yml в репозитории + extraResources в electron-builder.yml копирует его в resources/app-update.yml ДО упаковки в 7z. После пересборки app-update.yml оказывается внутри \$PLUGINSDIR/app-64.7z portable'а, при runtime-распаковке попадает в process.resourcesPath и проходит existsSync-чек.
+  - Параллельно: verify_autoupdate в release.sh при предыдущем /push выгорел на rate-limit (60 req/час для анонимных запросов к api.github.com — за один прогон ~40 запросов). Curl с -fsSL молча проглатывает HTTP 403, скрипт печатает misleading «GitHub API not reachable». Перевёл на gh_api_get() helper с тремя режимами: gh CLI (5000/час), GITHUB_TOKEN curl (5000/час), anon-fallback с честной диагностикой по HTTP-кодам (403→rate-limit, 404→repo/path, 5xx→transient, 000→network). Для CDN-ассетов (releases/download/.../latest.yml) curl сохранён — там лимита нет, но добавлен --write-out '%{http_code}' для surfacing реальной причины ошибки.
+  
+  Изменения:
+  - build/app-update.yml:
+    - Новый файл (140 байт): provider:github, owner:AlgorithmicTrade, repo:FloorCalc, releaseType:release, vPrefixedTagName:true, updaterCacheDirName:floorcalc-updater. Значения зеркалят publish-секцию electron-builder.yml.
+  - electron-builder.yml:
+    - Между секциями files: и asar: добавлен extraResources с from:build/app-update.yml → to:app-update.yml. Кладёт файл в <resources>/ финального portable.
+  - scripts/build-safe.cjs:
+    - Шаг 7 (Конфиг autoupdate): код функционально не изменён, переписан комментарий — основной путь теперь через extraResources, ручная generateAppUpdateYml(...) осталась как fallback (срабатывает только если файла нет; ветка existsSync(...) логирует «уже на месте» и пропускает).
+  - .claude/scripts/release.sh:
+    - Новые строки 1361-1429: detect _gh_api_mode (gh / token / anon) с one-time warning для anon-режима, helper gh_api_get(path) с 3 ветками execution.
+    - Строка 1445: curl call для actions/runs заменён на gh_api_get(...).
+    - Строка 1503: curl call для releases/tags заменён на gh_api_get(...).
+    - Строки 1487-1490: misleading сообщение «GitHub API not reachable» убрано — теперь точная причина выводится из helper'а в stderr.
+    - Строки 1535-1547: latest.yml CDN запрос — добавлен --write-out '%{http_code}' и tmp-файлы для surfacing HTTP-кода в варнинге, без переключения на gh (CDN не лимитится).
+  
+  Эффект:
+  - Verified локальной пересборкой (npm run build:safe, 68 секунд): release/FloorCalc-1.0.10-portable.exe теперь содержит resources/app-update.yml внутри \$PLUGINSDIR/app-64.7z (140 байт, корректный YAML). Запуск нового portable показал в debug.log отсутствие строки «[updater] disabled: app-update.yml not found» — autoupdater активируется штатно.
+  - После релиза этого фикса (и публикации v1.0.11 через CI с --publish always) на машине пользователя нужно ОДИН раз вручную скачать v1.0.11 portable с GitHub Releases и заменить им запущенную v1.0.9/v1.0.10 — старые бинарники физически не имеют app-update.yml. С v1.0.11 → v1.0.12+ автоапдейт пойдёт автоматически.
+  - verify_autoupdate в release.sh теперь не выгорит на двух подряд /push: gh CLI (установлен через scoop) аутентифицирует запросы к api.github.com, лимит 5000/час вместо 60. Если gh не залогинен и нет GITHUB_TOKEN — скрипт продолжает работать в anon-режиме, но теперь печатает реальную причину ошибки (rate-limit / 404 / 5xx) вместо misleading «not reachable».
+  - typecheck и tests не затрагивались правкой (изменены только build-config и shell-скрипт); смоук-тест gh_api_get на реальном API: exit=0 на v1.0.10, exit=1 + чёткое «HTTP 404» на несуществующем теге.
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.0.10
 
 _Released on 2026-05-08_
