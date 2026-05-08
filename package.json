@@ -1,6 +1,6 @@
 {
   "name": "floorcalc",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "description": "FloorCalc — web-калькулятор расхода рулонных напольных и настенных покрытий",
   "type": "module",

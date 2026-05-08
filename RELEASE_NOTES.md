@@ -2,6 +2,71 @@
 
 User-facing release notes for all versions.
 
+## v1.1.2
+
+_Released on 2026-05-08_
+
+### ✨ New Features
+
+- **Web**: добавить preset-каталог рулонов, version badge, подписи полей и починить мобильные регрессы v1.1.1
+
+  Решение:
+  - Загружать в каталог 5 предустановленных типоразмеров рулонов при первом запуске (когда в localStorage нет ключа floorcalc:catalog:v1), все по умолчанию выбраны — пользователь сразу может считать без ручного ввода.
+  - Показывать текущую версию приложения (v1.1.1) в фиксированной плашке в верхнем-левом углу через build-time константу __APP_VERSION__.
+  - Привести оформление полей AddRollForm к виду RoomEditor — верхние подписи «Ширина рулона» / «Длина рулона» через тот же label/labelText markup и токены.
+  - Починить мобильный вертикальный скролл (Samsung S23+ / Android Chrome): overflow-x: hidden оставлен только на html (на body блокировал momentum-scroll), overscroll-behavior-y: contain убран (прерывал scroll-chain), на контейнер Konva добавлен touch-action: pan-y (Konva перехватывал touch-события, блокируя page-scroll), на Tabs добавлены touch-action: pan-x / manipulation.
+  - Расширить отрисовку номеров рулонов на схеме под мобильные канвасы: adaptive MARGIN (20px при stage<480, иначе 40px), порог отрисовки label снижен с 8 до 5px, baseFs расширен h<12?6, минимум fontSize 5px; в SchemeView добавлен adaptive aspect через roomAspect prop (вертикальные помещения получают более вытянутый stage); на Konva.Text у pieceLabel — белая полупрозрачная обводка для читаемости на любом цвете куска.
+  
+  Изменения:
+  - src/shared/constants.ts:
+    - PRESET_ROLLS: readonly RollType[] — 5 пресетов (2×20, 2×15, 2×10, 1.8×15, 1.5×15 м), стабильные id preset-WxL.
+  - src/lib/storage/catalogStorage.ts:
+    - defaultCatalog(): rolls = PRESET_ROLLS (клон), selectedRollIds = все id пресетов.
+  - src/App.tsx:
+    - <span className={styles.versionBadge}>v{__APP_VERSION__}</span> рендерится перед AppShell.
+  - src/components/layout/AppShell.module.css:
+    - .versionBadge: position fixed top:6px left:10px, font 11px, color ink-subtle, surface-2 background, hairline-soft border, pointer-events: none, z-index: 5.
+  - src/components/catalog/AddRollForm.tsx:
+    - <div className={styles.field}> заменены на <label className={styles.label}> с <span className={styles.labelText}>Ширина рулона / Длина рулона</span>.
+  - src/components/catalog/AddRollForm.module.css:
+    - .label / .labelText: те же токены, что в RoomEditor (color-ink-muted, font 13px desktop / 14px mobile, min-height двухстрочный для выравнивания по нижнему краю кнопки).
+  - src/styles/globals.css:
+    - html { overflow-x: hidden; max-width: 100% } — body больше не получает overflow-x: hidden.
+    - body { min-height: 100dvh } без overscroll-behavior-y.
+  - src/components/result/SchemeView.module.css:
+    - .wrap: добавлен touch-action: pan-y.
+  - src/components/design-system/Tabs.module.css:
+    - .row { touch-action: pan-x }, .tab { touch-action: manipulation }.
+  - src/components/result/SchemeRenderer.ts:
+    - getMargin(stageWidth): adaptive 20/40px; getRoomLabelFontSize: 11/12.
+    - SchemeNode kind:'roomLabel' расширен полем fontSize.
+    - Порог pieceLabel: minSide >= 5 (было 8); baseFs: h<12?6:h<18?8:h<30?11:h<60?14:18; min 5 (было 7).
+    - roomLabel позиционирование от MARGIN (адаптивный отступ).
+  - src/components/result/SchemeView.tsx:
+    - SchemeViewProps: добавлен опциональный roomAspect.
+    - calcSize: aspect canvas = clamp(roomAspect, 9/16, 2.0) если передан, иначе 9/16.
+    - Konva.Text для pieceLabel: stroke 'rgba(255,255,255,0.75)', strokeWidth 1, fillAfterStrokeEnabled.
+    - roomLabel: fontSize: node.fontSize вместо хардкода 12.
+  - src/components/result/ResultCard.tsx:
+    - SchemeView получает roomAspect={room.length / room.width}.
+  - tests/domain/scheme-renderer.test.ts:
+    - computeScale обновлён под adaptive MARGIN.
+    - Существующие 13 тестов: пороги в assertions переведены на >=5.
+    - +12 новых: S23+ portrait (stage 380×520), S23+ landscape (915×515), stress 320×180 room 12×30м, edge cases threshold 5 vs 4.
+  
+  Эффект:
+  - Первый запуск: каталог не пуст — пользователь видит 5 готовых типоразмеров, всё подсвечено для расчёта. Существующие пользователи не затронуты (запись в localStorage остаётся).
+  - Версия приложения видна в углу (subtle 11px badge), pointer-events: none не мешает кликам по UI.
+  - Поля «Ширина рулона» / «Длина рулона» получили те же подписи, что и поля помещения — единый визуальный паттерн.
+  - На S23+ Android Chrome вертикальный скролл работает в обеих ориентациях; tabs скроллятся горизонтально без перехвата вертикали; вертикальная схема не блокирует page-scroll.
+  - На вертикальных помещениях 9.4×21м и подобных номера рулонов отрисовываются для всех кусков с min-стороной ≥5px (включая 1-метровые полосы 9.4×1м, 6×1м, 3.4×1м, 1.2×2м); adaptive aspect даёт вертикальным комнатам больше площади для рендера; обводка делает текст читаемым на любом цвете куска.
+  - Quality gates: typecheck 0 ошибок; Vitest 196/196 (171 существующих + 25 scheme-renderer); build 2.78s без ошибок.
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.1.1
 
 _Released on 2026-05-08_
