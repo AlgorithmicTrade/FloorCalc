@@ -96,6 +96,80 @@ async function safeRemoveDir(dirPath, maxAttempts = 5) {
   return false;
 }
 
+/**
+ * Генерирует `app-update.yml` для win-unpacked-сборки на основе publish-секции
+ * `electron-builder.yml`. Минимальный валидный набор для electron-updater
+ * (GitHub provider): provider/owner/repo плюс опциональные vPrefixedTagName /
+ * releaseType / updaterCacheDirName.
+ *
+ * Парсер не использует js-yaml (его нет в прямых зависимостях проекта) —
+ * простой regex по плоской YAML-секции `publish:`. Этого достаточно, потому
+ * что секция в electron-builder.yml всегда плоская (provider/owner/repo
+ * на одном уровне отступа).
+ */
+function generateAppUpdateYml(targetPath) {
+  const builderYmlPath = path.resolve('electron-builder.yml');
+  if (!fs.existsSync(builderYmlPath)) {
+    logWarn(`electron-builder.yml не найден — не могу сгенерировать app-update.yml`);
+    return false;
+  }
+  const yml = fs.readFileSync(builderYmlPath, 'utf-8');
+
+  // Извлекаем publish-секцию: от строки "publish:" до следующего top-level ключа.
+  const publishMatch = yml.match(/(^|\n)publish:\s*\n([\s\S]*?)(?=\n[A-Za-z][A-Za-z0-9_-]*:|\n*$)/);
+  if (!publishMatch) {
+    logWarn(`secция publish: не найдена в electron-builder.yml — пропускаю генерацию`);
+    return false;
+  }
+  const publishBlock = publishMatch[2];
+
+  // Простой helper для извлечения значения по ключу из плоской секции.
+  // Учитываем YAML-список: первый ключ может идти после `- ` (`- provider: github`),
+  // последующие — просто с отступом.
+  const extract = (key) => {
+    const re = new RegExp(`^\\s*-?\\s*${key}:\\s*(.+?)\\s*$`, 'm');
+    const m = publishBlock.match(re);
+    return m ? m[1].replace(/^['"]|['"]$/g, '') : null;
+  };
+
+  const provider = extract('provider');
+  const owner = extract('owner');
+  const repo = extract('repo');
+
+  if (provider !== 'github' || !owner || !repo) {
+    logWarn(
+      `electron-builder.yml: provider=${provider}, owner=${owner}, repo=${repo}.\n` +
+      `   Поддерживается только provider:github для авто-генерации.`,
+    );
+    return false;
+  }
+
+  // Собираем минимально-достаточный app-update.yml.
+  // updaterCacheDirName: <productName-lowercase>-updater — формат, который
+  // electron-builder использует по умолчанию.
+  const lines = [
+    'provider: github',
+    `owner: ${owner}`,
+    `repo: ${repo}`,
+  ];
+  const releaseType = extract('releaseType');
+  if (releaseType) lines.push(`releaseType: ${releaseType}`);
+  const vPref = extract('vPrefixedTagName');
+  if (vPref) lines.push(`vPrefixedTagName: ${vPref}`);
+
+  // productName из package.json для updaterCacheDirName
+  try {
+    const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+    const cacheName = `${(pkg.name || 'app').toLowerCase()}-updater`;
+    lines.push(`updaterCacheDirName: ${cacheName}`);
+  } catch (_) {
+    // не критично — electron-updater сам подставит дефолт по productName
+  }
+
+  fs.writeFileSync(targetPath, lines.join('\n') + '\n', 'utf-8');
+  return true;
+}
+
 function runCommand(cmd, description) {
   logStep('EXEC', `${description}`);
   log(`    ${colors.yellow}$${colors.reset} ${cmd}`);
@@ -168,12 +242,52 @@ async function build() {
 
   // 6. electron-builder. Override директории output только если переключились
   //    на альтернативу — иначе используем то, что задано в electron-builder.yml.
+  //
+  //    `--publish never` ВАЖЕН: без флага electron-builder НЕ генерирует
+  //    `app-update.yml` в resources/, а electron-updater на старте проверяет
+  //    `existsSync(resourcesPath/app-update.yml)` (electron/main/updater.ts:41-44)
+  //    и тихо отключается, если файла нет. С `--publish never` файл создаётся
+  //    локально (по publish-секции из electron-builder.yml — provider:github),
+  //    но НИКАКИЕ ассеты на GitHub не загружаются. То есть autoupdate в
+  //    локальной сборке начинает работать (проверяет latest.yml в Release и
+  //    предлагает обновление), а CI-публикация остаётся отдельным шагом
+  //    через `npm run build:publish` (`--publish always`).
   logStep('6', 'electron-builder');
   const outputArg = outputDir === 'release' ? '' : ` --config.directories.output=${outputDir}`;
-  const builderCmd = `npx electron-builder --config electron-builder.yml${outputArg}`;
+  const builderCmd = `npx electron-builder --config electron-builder.yml --publish never${outputArg}`;
   if (!runCommand(builderCmd, 'electron-builder')) {
     process.exitCode = 1;
     return;
+  }
+
+  // 7. Auto-update config для unpacked-версии.
+  //
+  //    Контекст: electron-builder для portable target кладёт `app-update.yml`
+  //    ВНУТРЬ portable.exe (распаковывается в TEMP при старте), но НЕ создаёт
+  //    файл рядом с win-unpacked/. Это by design: portable.exe — финальный
+  //    артефакт, win-unpacked/ — рабочая папка для отладки.
+  //
+  //    Однако electron-updater (electron/main/updater.ts:41-44) проверяет
+  //    `existsSync(resourcesPath/app-update.yml)` и тихо отключается без
+  //    файла. То есть если запускать `release-new\win-unpacked\FloorCalc.exe`
+  //    напрямую (а это удобно для разработки/тестов) — autoupdate не работает.
+  //
+  //    Решение: генерируем `app-update.yml` для win-unpacked вручную из
+  //    publish-секции electron-builder.yml. Тогда autoupdate работает в обоих
+  //    режимах: portable.exe (как раньше, через встроенный файл) И win-unpacked
+  //    (через сгенерированный нами файл).
+  logStep('7', 'Конфиг autoupdate (app-update.yml)');
+  const winUnpackedRes = path.join(outputDir, 'win-unpacked', 'resources');
+  const appUpdateYmlPath = path.join(winUnpackedRes, 'app-update.yml');
+  if (fs.existsSync(appUpdateYmlPath)) {
+    logOk(`app-update.yml уже на месте: ${appUpdateYmlPath}`);
+  } else if (!fs.existsSync(winUnpackedRes)) {
+    logWarn(`win-unpacked/resources/ не найден — пропускаю генерацию app-update.yml`);
+  } else {
+    const generated = generateAppUpdateYml(appUpdateYmlPath);
+    if (generated) {
+      logOk(`app-update.yml сгенерирован для win-unpacked: ${appUpdateYmlPath}`);
+    }
   }
 
   const elapsed = Math.round((Date.now() - startedAt) / 1000);
@@ -199,4 +313,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { build };
+module.exports = { build, generateAppUpdateYml };

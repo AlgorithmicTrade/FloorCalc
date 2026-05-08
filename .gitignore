@@ -39,3 +39,5 @@ docs/plans/agile-prancing-pnueli.md
 # Local test build outputs (never committed)
 release-test/
 release-new/
+.beads/
+reports/

@@ -8,7 +8,7 @@
  * Состояние «Скопировано» — короткий visual-cue: иконка чекмарка на 1.5с.
  */
 
-import { useCallback, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { IconButton } from '@/components/design-system/IconButton';
 import { copyImage } from '@/lib/copyImage';
 import { exportPng } from '@/lib/exportPng';
@@ -26,6 +26,17 @@ export interface ResultActionsProps {
 export function ResultActions({ stageRef, resultText, filenameHint }: ResultActionsProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied'>('idle');
   const [busy, setBusy] = useState<null | 'png' | 'pdf' | 'print'>(null);
+  const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimeoutRef.current !== null) {
+        clearTimeout(copyTimeoutRef.current);
+        copyTimeoutRef.current = null;
+      }
+    },
+    []
+  );
 
   const handleCopy = useCallback(() => {
     const stage = stageRef.current;
@@ -34,7 +45,13 @@ export function ResultActions({ stageRef, resultText, filenameHint }: ResultActi
       .then((ok) => {
         if (ok) {
           setCopyState('copied');
-          setTimeout(() => setCopyState('idle'), 1500);
+          if (copyTimeoutRef.current !== null) {
+            clearTimeout(copyTimeoutRef.current);
+          }
+          copyTimeoutRef.current = setTimeout(() => {
+            setCopyState('idle');
+            copyTimeoutRef.current = null;
+          }, 1500);
         }
       })
       .catch((e) => {

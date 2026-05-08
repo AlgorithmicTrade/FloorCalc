@@ -1,4 +1,4 @@
-import { app, type BrowserWindow, ipcMain, shell } from 'electron';
+import { app, type BrowserWindow, ipcMain } from 'electron';
 import { z } from 'zod';
 import { IPC_CHANNELS } from '@shared/ipc-contract.js';
 import { STORAGE_SCHEMA_VERSION } from '@shared/constants.js';
@@ -55,10 +55,6 @@ export function registerIpcHandlers(deps: IpcDeps): void {
 
   ipcMain.handle(IPC_CHANNELS.APP_VERSION, async () => {
     return app.getVersion();
-  });
-
-  ipcMain.handle(IPC_CHANNELS.APP_SHOW_IN_FOLDER, async (_event, path: string) => {
-    shell.showItemInFolder(path);
   });
 
   ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {

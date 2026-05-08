@@ -16,8 +16,7 @@ const api: FloorCalcAPI = {
     print: (html) => ipcRenderer.invoke(IPC_CHANNELS.FILES_PRINT, html)
   },
   app: {
-    getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
-    showItemInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.APP_SHOW_IN_FOLDER, path)
+    getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION)
   },
   updater: {
     checkForUpdates: () => ipcRenderer.invoke(IPC_CHANNELS.UPDATER_CHECK),

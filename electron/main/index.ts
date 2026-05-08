@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Menu, session, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, session, shell } from 'electron';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { APP_NAME } from '@shared/constants.js';
 import { registerIpcHandlers } from './ipc.js';
 import { UpdaterService } from './updater.js';
@@ -11,14 +12,53 @@ import {
   isWithinAnyDisplay,
 } from './windowState.js';
 
-function diagLog(message: string): void {
+const DEBUG_LOG_MAX_BYTES = 1_048_576;
+
+export function diagLog(message: string): void {
   try {
     const dir = app.getPath('userData');
     mkdirSync(dir, { recursive: true });
+    const file = join(dir, 'debug.log');
     const ts = new Date().toISOString();
-    appendFileSync(join(dir, 'debug.log'), `${ts} ${message}\n`);
+    try {
+      const st = statSync(file);
+      if (st.size > DEBUG_LOG_MAX_BYTES) {
+        writeFileSync(file, `${ts} [diagLog] truncated (was ${st.size} bytes)\n`);
+      }
+    } catch {
+      // файла ещё нет или stat невозможен — продолжаем как обычно
+    }
+    appendFileSync(file, `${ts} ${message}\n`);
   } catch {
     // Логирование не критично — игнорируем ошибки записи
+  }
+}
+
+// Удаление устаревших updater-логов из tmpdir() — синхронно при старте,
+// один раз и без блокирующего I/O в hot path. Никогда не бросает.
+function cleanupStaleUpdaterLogs(): void {
+  const TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const dir = tmpdir();
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return;
+  }
+  for (const name of entries) {
+    if (name !== 'floorcalc-spawn.log' && !/^floorcalc-update-.+\.log$/.test(name)) {
+      continue;
+    }
+    const full = join(dir, name);
+    try {
+      const st = statSync(full);
+      if (!st.isFile()) continue;
+      if (now - st.mtimeMs <= TTL_MS) continue;
+      unlinkSync(full);
+    } catch {
+      // пропускаем файлы с недоступным stat / unlink — не критично
+    }
   }
 }
 
@@ -48,6 +88,8 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    cleanupStaleUpdaterLogs();
+
     // Убираем application menu полностью
     Menu.setApplicationMenu(null);
 
@@ -76,6 +118,15 @@ if (!gotLock) {
     updater.start();
 
     registerIpcHandlers({ mainWindow, updater });
+  }).catch((err) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    diagLog(`[main] whenReady failed: ${msg}`);
+    try {
+      dialog.showErrorBox('FloorCalc — ошибка запуска', msg);
+    } catch {
+      // если даже dialog недоступен — просто выходим
+    }
+    app.quit();
   });
 
   app.on('window-all-closed', () => {
@@ -196,19 +247,21 @@ function createWindow(): BrowserWindow {
 
   win.webContents.on('dom-ready', () => {
     diagLog('[renderer] dom-ready');
-    win.webContents.executeJavaScript(`
-      (() => {
-        try {
-          const root = document.getElementById('root');
-          console.log('[diag] dom-ready: root=' + (root ? 'found' : 'missing') + ', innerHTML.length=' + (root ? root.innerHTML.length : 'n/a'));
-          console.log('[diag] body bg=' + getComputedStyle(document.body).backgroundColor);
-          console.log('[diag] window.api keys=' + Object.keys(window.api || {}).join(','));
-          console.log('[diag] window.electron keys=' + Object.keys(window.electron || {}).join(','));
-        } catch (e) {
-          console.error('[diag] error: ' + (e instanceof Error ? e.message : String(e)));
-        }
-      })();
-    `).catch((err: Error) => diagLog('executeJavaScript failed: ' + err.message));
+    if (debugEnabled) {
+      win.webContents.executeJavaScript(`
+        (() => {
+          try {
+            const root = document.getElementById('root');
+            console.log('[diag] dom-ready: root=' + (root ? 'found' : 'missing') + ', innerHTML.length=' + (root ? root.innerHTML.length : 'n/a'));
+            console.log('[diag] body bg=' + getComputedStyle(document.body).backgroundColor);
+            console.log('[diag] window.api keys=' + Object.keys(window.api || {}).join(','));
+            console.log('[diag] window.electron keys=' + Object.keys(window.electron || {}).join(','));
+          } catch (e) {
+            console.error('[diag] error: ' + (e instanceof Error ? e.message : String(e)));
+          }
+        })();
+      `).catch((err: Error) => diagLog('executeJavaScript failed: ' + err.message));
+    }
   });
 
   win.webContents.on('did-fail-load', (_e, code, desc, url) => {
@@ -224,8 +277,8 @@ function createWindow(): BrowserWindow {
   });
 
   win.webContents.on('console-message', (_e, level, message, line, source) => {
-    // level: 0=verbose,1=info,2=warning,3=error — пишем всё уровня info и выше
-    if (level >= 1) {
+    // level: 0=verbose,1=info,2=warning,3=error — в production пишем только error
+    if (level >= 3) {
       diagLog(`[renderer lvl${level}] ${source}:${line} — ${message}`);
     }
   });
@@ -245,9 +298,13 @@ function createWindow(): BrowserWindow {
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
   if (!app.isPackaged && devUrl) {
-    win.loadURL(devUrl);
+    win.loadURL(devUrl).catch((err) =>
+      diagLog('loadURL failed: ' + (err instanceof Error ? err.message : String(err)))
+    );
   } else {
-    win.loadFile(join(__dirname, '../renderer/index.html'));
+    win.loadFile(join(__dirname, '../renderer/index.html')).catch((err) =>
+      diagLog('loadFile failed: ' + (err instanceof Error ? err.message : String(err)))
+    );
   }
 
   return win;

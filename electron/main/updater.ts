@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { UPDATE_CHECK_DELAY_MS } from '@shared/constants.js';
 import { IPC_CHANNELS, type UpdateStatus } from '@shared/ipc-contract.js';
+import { diagLog } from './index.js';
 import { writeUpdateHelperScript } from './updaterHelper.js';
 
 const { autoUpdater } = electronUpdater;
@@ -34,12 +35,12 @@ export class UpdaterService {
     this.started = true;
 
     if (!app.isPackaged) {
-      console.log('[updater] disabled in dev mode');
+      diagLog('[updater] disabled in dev mode');
       return;
     }
 
     if (!isUpdateConfigPresent()) {
-      console.log('[updater] disabled: app-update.yml not found (unpublished build)');
+      diagLog('[updater] disabled: app-update.yml not found (unpublished build)');
       return;
     }
 
@@ -58,7 +59,7 @@ export class UpdaterService {
 
   async checkForUpdates(): Promise<void> {
     if (!app.isPackaged) {
-      console.log('[updater] check ignored in dev mode');
+      diagLog('[updater] check ignored in dev mode');
       return;
     }
     if (!isUpdateConfigPresent()) return;
@@ -72,7 +73,7 @@ export class UpdaterService {
 
   async downloadUpdate(): Promise<void> {
     if (!app.isPackaged) {
-      console.log('[updater] download ignored in dev mode');
+      diagLog('[updater] download ignored in dev mode');
       return;
     }
     if (!isUpdateConfigPresent()) return;

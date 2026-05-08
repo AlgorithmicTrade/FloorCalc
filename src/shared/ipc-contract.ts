@@ -29,7 +29,6 @@ export type FloorCalcAPI = {
   };
   app: {
     getVersion(): Promise<string>;
-    showItemInFolder(path: string): Promise<void>;
   };
   updater: {
     checkForUpdates(): Promise<void>;
@@ -47,7 +46,6 @@ export const IPC_CHANNELS = {
   FILES_SAVE_PDF: 'files:save-pdf',
   FILES_PRINT: 'files:print',
   APP_VERSION: 'app:version',
-  APP_SHOW_IN_FOLDER: 'app:show-in-folder',
   UPDATER_CHECK: 'updater:check',
   UPDATER_DOWNLOAD: 'updater:download',
   UPDATER_INSTALL: 'updater:install',
