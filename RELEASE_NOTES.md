@@ -2,6 +2,18 @@
 
 User-facing release notes for all versions.
 
+## v1.1.0
+
+_Released on 2026-05-08_
+
+### ✨ New Features
+
+- **Web**: мигрировать FloorCalc с Electron на web SPA с хостингом на GitHub Pages
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.0.14
 
 _Released on 2026-05-08_

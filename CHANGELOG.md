@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-08
+
+### Added
+- **Web**: мигрировать FloorCalc с Electron на web SPA с хостингом на GitHub Pages (89241d6)
+
 ## [1.0.14] - 2026-05-08
 
 ### Changed
