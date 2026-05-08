@@ -2,6 +2,72 @@
 
 User-facing release notes for all versions.
 
+## v1.1.1
+
+_Released on 2026-05-08_
+
+### 🐛 Bug Fixes
+
+- **Web**: починить mobile responsiveness и отрисовку номеров рулона на узких кусках
+
+  Решение:
+  - Ввести единый mobile breakpoint (<768px): single-column layout, нативный page scroll, viewport-fit=cover, 100dvh.
+  - Закрыть horizontal overflow на корневом уровне (html/body) и устранить grid-track overflow через minmax(0, 1fr) + min-width: 0 на колонках.
+  - Перевести Konva-схему на ResizeObserver-based sizing с aspect-ratio 16:9, чтобы канвас сжимался вместе с контейнером без CSS-transforms (экспорт PNG/PDF не страдает).
+  - Снизить порог отрисовки номера рулона на схеме с 14px до 8px по min-стороне и сделать fontSize адаптивным по min(w, h) и числу разрядов — иначе на вертикальных помещениях типа 9.4×21м (scale ~11px/m) подписи 1-метровых полос и узких кусков не рисовались.
+  - Добавить touch-friendly hit areas (44×44) на IconButton/Checkbox через @media (pointer: coarse), горизонтальный скролл табов помещений, стек-вёрстку AddRollForm и RoomEditor.dimensions ниже 480px.
+  
+  Изменения:
+  - src/components/layout/AppShell.module.css:
+    - .shell: grid-template-columns 400px → minmax(0, 1fr); добавлены overflow-x: hidden, 100dvh.
+    - .left/.right: добавлен min-width: 0 для корректного сжатия grid-tracks.
+    - @media (max-width: 767px): single-column stack, отключение nested-scroll, уменьшение padding.
+  - src/styles/globals.css:
+    - html, body: overflow-x: hidden; max-width: 100%.
+    - body: min-height: 100dvh; overscroll-behavior-y: contain.
+    - ::-webkit-scrollbar: обёрнут в @media (hover: hover) and (pointer: fine) — на мобильных используется нативный overlay scrollbar.
+  - index.html:
+    - viewport: добавлен viewport-fit=cover для iPhone notch.
+  - src/components/result/SchemeView.tsx:
+    - useEffect: добавлен ResizeObserver на контейнер; state size:{w,h} с aspect 16:9, min 240×180, cap по props widthPx/heightPx.
+    - renderScheme(): вызывается на актуальном size.w/size.h, deps включают size.
+    - Konva.Stage: динамические width/height, экспорт PNG/PDF через pixelRatio (без CSS scale).
+  - src/components/result/SchemeRenderer.ts:
+    - Порог отрисовки pieceLabel: w >= 14 && h >= 14 → min(w, h) >= 8.
+    - fontSize: ступенчатый baseFs по высоте (8/11/14/18) → cap по maxFsByWidth = floor((w-2)/(0.55*digits)) и maxFsByHeight = floor(h-2) → min 7px.
+    - Защита Math.max(1, digits) от деления на ноль для многозначных номеров.
+  - src/components/design-system/IconButton.module.css:
+    - @media (pointer: coarse): min-width/min-height 44px.
+  - src/components/design-system/Checkbox.module.css:
+    - @media (pointer: coarse): hit-area 44×44 на label-обёртке.
+  - src/components/design-system/Tabs.module.css:
+    - .tabs: overflow-x: auto, white-space: nowrap, scrollbar-width: none.
+    - .tab: flex-shrink: 0; конечный slot — position: sticky.
+  - src/components/catalog/AddRollForm.module.css:
+    - @media (max-width: 479px): flex-wrap, flex 1 1 50%, кнопка 100%.
+  - src/components/catalog/RollRow.module.css:
+    - @media (pointer: coarse): padding 12px вместо 8px.
+  - src/components/rooms/RoomEditor.module.css:
+    - @media (max-width: 479px): flex-wrap, swap-кнопка order: 99; labelText 14px.
+  - src/components/result/ResultActions.module.css:
+    - flex-shrink: 0 на дочерних кнопках.
+  - src/components/update/UpdateBanner.module.css:
+    - @media (max-width: 479px): bottom: 0; left: 0; right: 0; width: auto.
+  - tests/domain/scheme-renderer.test.ts:
+    - Новый файл, 13 кейсов: вертикальная комната 9.4×21м, обратная 21×9.4м, edge case <8px без label, многозначные номера ≥10.
+  
+  Эффект:
+  - Мобильный браузер (≤767px): horizontal overflow закрыт, layout перестраивается в одну колонку, нативный page scroll работает, ничего не перекрывается.
+  - На вертикальных помещениях (room.length >> room.width) номер рулона рисуется на всех кусках с min-стороной ≥8px — включая 1-метровые полосы 9.4×1м, 6×1м, 3.4×1м и узкие 1.2×2м.
+  - Konva-схема корректно ресайзится в любую ширину контейнера; экспорт PNG/PDF сохраняет качество (Konva.toBlob/toDataURL с pixelRatio: 2 на актуальном размере stage).
+  - Touch targets соответствуют WCAG (≥44×44 на coarse-pointer устройствах); табы помещений прокручиваются горизонтально без обрезания.
+  - Quality gates: typecheck 0 ошибок; Vitest 184/184 (171 существующих + 13 новых scheme-renderer).
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.1.0
 
 _Released on 2026-05-08_
