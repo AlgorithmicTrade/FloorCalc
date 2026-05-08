@@ -81,18 +81,23 @@
     align-items: center;
     justify-content: center;
     position: fixed;
-    top: 5px;
-    left: 84px;
+    top: 6px;
+    left: 390px;
     z-index: 10;
-    width: 28px;
-    height: 28px;
+    width: 20px;
+    height: 20px;
     padding: 0;
+    box-sizing: border-box;
     background: var(--color-surface-2);
     color: var(--color-ink-muted);
     border: 1px solid var(--color-hairline-soft);
-    border-radius: var(--r-sm);
+    border-radius: var(--r-xs);
     cursor: pointer;
-    transition: background-color 120ms, color 120ms, border-color 120ms;
+    transition: background-color 120ms, color 120ms, border-color 120ms, left 200ms ease;
+  }
+
+  .sidebarToggleCollapsed {
+    left: 0;
   }
 
   .sidebarToggle:hover:not(:disabled) {

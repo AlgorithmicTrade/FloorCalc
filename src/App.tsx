@@ -72,7 +72,7 @@ export function App() {
       {/* Кнопка видна только при ≥768px (CSS: display:none на мобильном portrait). */}
       <button
         type="button"
-        className={styles.sidebarToggle}
+        className={`${styles.sidebarToggle}${sidebarCollapsed ? ` ${styles.sidebarToggleCollapsed}` : ''}`}
         onClick={toggleSidebar}
         aria-label={sidebarCollapsed ? 'Развернуть боковую панель' : 'Свернуть боковую панель'}
         aria-expanded={!sidebarCollapsed}
@@ -80,8 +80,8 @@ export function App() {
       >
         {/* Inline-SVG chevron: › при collapsed, ‹ при expanded. */}
         <svg
-          width="16"
-          height="16"
+          width="12"
+          height="12"
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden="true"

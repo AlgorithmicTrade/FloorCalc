@@ -241,11 +241,6 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
           fill: PIECE_LABEL_FILL,
           align: 'center',
           verticalAlign: 'middle',
-          // Белая обводка повышает читаемость цифр на любом цвете куска,
-          // особенно на мелких кусках с fontSize 5–8px.
-          stroke: 'rgba(255,255,255,0.75)',
-          strokeWidth: 1,
-          fillAfterStrokeEnabled: true,
           listening: false,
         });
         continue;

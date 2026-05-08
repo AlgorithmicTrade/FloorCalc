@@ -4,6 +4,7 @@
  * при mount всего приложения).
  */
 
+import { Card } from '@/components/design-system/Card';
 import { Eyebrow } from '@/components/design-system/Eyebrow';
 import { useCatalogStore } from '@/store/catalogStore';
 import { RollRow } from './RollRow';
@@ -15,7 +16,7 @@ export function RollCatalog() {
   const error = useCatalogStore((s) => s.error);
 
   return (
-    <div>
+    <Card surface="surface-1" padding="md">
       <Eyebrow>Каталог рулонов</Eyebrow>
       {rolls.length === 0 ? (
         <div className={`t-body-sm ${styles.hint}`}>
@@ -30,6 +31,6 @@ export function RollCatalog() {
       )}
       {error && <div className={styles.error}>{error}</div>}
       <AddRollForm />
-    </div>
+    </Card>
   );
 }
