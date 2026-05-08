@@ -9,3 +9,19 @@
   flex: 1;
   min-width: 0;
 }
+
+@media (max-width: 479px) {
+  .form {
+    flex-wrap: wrap;
+  }
+
+  .field {
+    flex: 1 1 calc(50% - var(--space-xs));
+    min-width: 120px;
+  }
+
+  .form > button {
+    flex: 0 0 100%;
+    margin-top: var(--space-xs);
+  }
+}

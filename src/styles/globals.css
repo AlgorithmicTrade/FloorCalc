@@ -6,6 +6,12 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100%;
+}
+
 body,
 h1, h2, h3, h4, h5, h6,
 p {
@@ -29,25 +35,31 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overscroll-behavior-y: contain;
 }
 
-/* Custom dark scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* Custom dark scrollbar — только на desktop (hover + точный pointer).
+   На мобильных оставляем нативный overlay scrollbar (iOS Safari, Android Chrome). */
+@media (hover: hover) and (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-::-webkit-scrollbar-track {
-  background: var(--color-surface-1);
-}
+  ::-webkit-scrollbar-track {
+    background: var(--color-surface-1);
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--color-surface-3);
-  border-radius: var(--r-sm);
-}
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-surface-3);
+    border-radius: var(--r-sm);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ink-subtle);
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-subtle);
+  }
 }
 
 /* Focus visible (a11y) */

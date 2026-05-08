@@ -3,6 +3,13 @@
   align-items: center;
   gap: 0;
   border-bottom: 1px solid var(--color-hairline);
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.row::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -14,6 +21,8 @@
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   transition: color 120ms, border-color 120ms;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .tab:hover {
@@ -28,4 +37,15 @@
 .end {
   margin-left: auto;
   padding: 0 8px;
+  position: sticky;
+  right: 0;
+  background: var(--color-canvas);
+  flex-shrink: 0;
+}
+
+@media (pointer: coarse) {
+  .tab {
+    padding: 14px 16px;
+    min-height: 48px;
+  }
 }

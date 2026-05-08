@@ -173,9 +173,21 @@ export function renderScheme(
 
     // Номер рулона (1-based). На схеме отображается только он —
     // размеры кусков не показываются как подписи (доступны в hover-tooltip).
-    const showPieceLabel = w >= 14 && h >= 14;
-    if (showPieceLabel) {
-      const pieceLabelFontSize = h < 30 ? 9 : h < 60 ? 13 : 16;
+    //
+    // Порог 8px — минимум, при котором одиночная цифра читаема при fontSize=7.
+    // fontSize адаптируется к min(w, h), чтобы корректно работать на кусках
+    // с малой высотой (полосы 1м при scale~11px/m) и на узких кусках (1.2м ширина).
+    // Для многозначных номеров (≥10) дополнительно ограничиваем по ширине:
+    //   digits * 0.55 * fontSize ≤ w - 2.
+    const minSide = Math.min(w, h);
+    if (minSide >= 8) {
+      const digits = String(p.rollIndex + 1).length;
+      const baseFs = h < 18 ? 8 : h < 30 ? 11 : h < 60 ? 14 : 18;
+      // Текст должен помещаться по ширине: digits * 0.55 * fontSize ≤ w - 2.
+      const maxFsByWidth = Math.floor((w - 2) / (0.55 * Math.max(1, digits)));
+      // Текст должен помещаться по высоте с минимальным зазором.
+      const maxFsByHeight = Math.floor(h - 2);
+      const pieceLabelFontSize = Math.max(7, Math.min(baseFs, maxFsByWidth, maxFsByHeight));
       nodes.push({
         kind: 'pieceLabel',
         x,

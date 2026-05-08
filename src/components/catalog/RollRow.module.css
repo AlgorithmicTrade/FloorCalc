@@ -23,3 +23,11 @@
   flex: 1;
   color: var(--color-ink);
 }
+
+/* На тач-устройствах строка каталога должна иметь высоту ≥44px (iOS HIG):
+   18px checkbox + padding 12+12 = 42 + контент → ≥44. */
+@media (pointer: coarse) {
+  .row {
+    padding: 12px 12px;
+  }
+}

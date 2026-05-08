@@ -51,12 +51,18 @@ const STATS_TEXT_FILL = '#cfd2d8';
 const STATS_TEXT_FILL_DETAIL = '#9aa0aa';
 
 export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function SchemeView(
-  { result, room, roll, catalog, widthPx = 640, heightPx = 360, className = '' },
+  { result, room, roll, catalog, widthPx: maxWidthPx = 640, heightPx: maxHeightPx = 360, className = '' },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
+  // Актуальные размеры canvas — пересчитываются ResizeObserver'ом контейнера.
+  // Стартовые значения = max-bounds, чтобы первый рендер не моргал нулевым размером.
+  const [size, setSize] = useState<{ w: number; h: number }>({
+    w: maxWidthPx,
+    h: maxHeightPx,
+  });
 
   useImperativeHandle(
     ref,
@@ -81,39 +87,59 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
   );
 
   // Создаём Stage один раз при монтировании, уничтожаем при размонтировании.
+  // Размер берётся от ширины контейнера (с aspect 16:9 и cap по maxWidthPx),
+  // подписан ResizeObserver — реагирует на rotate / resize / изменение layout.
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    // Расчёт размеров от ширины контейнера, aspect maxHeightPx/maxWidthPx, capped maxWidthPx.
+    // Минимум 240×180 — иначе stats-text внизу схемы перестаёт читаться.
+    const calcSize = (): { w: number; h: number } => {
+      const cw = Math.max(240, Math.min(container.clientWidth, maxWidthPx));
+      const aspect = maxHeightPx / maxWidthPx;
+      const ch = Math.max(180, Math.round(cw * aspect));
+      return { w: cw, h: ch };
+    };
+
+    const initial = calcSize();
+    setSize((prev) => (prev.w === initial.w && prev.h === initial.h ? prev : initial));
+
     const stage = new Konva.Stage({
       container,
-      width: widthPx,
-      height: heightPx,
+      width: initial.w,
+      height: initial.h,
     });
     stageRef.current = stage;
 
+    const ro = new ResizeObserver(() => {
+      const next = calcSize();
+      setSize((prev) => (prev.w === next.w && prev.h === next.h ? prev : next));
+    });
+    ro.observe(container);
+
     return () => {
+      ro.disconnect();
       stageRef.current = null;
       stage.destroy();
     };
-    // widthPx/heightPx намеренно не в deps — размеры фиксированы на весь жизненный цикл
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [maxWidthPx, maxHeightPx]);
 
-  // Перерисовываем схему при изменении данных.
+  // Перерисовываем схему при изменении данных или размера контейнера.
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
 
-    stage.width(widthPx);
-    stage.height(heightPx);
+    stage.width(size.w);
+    stage.height(size.h);
 
     // Уничтожаем предыдущие слои перед перерисовкой.
     stage.destroyChildren();
 
     // Layer с listening: true — нужен для hover-событий на группах piece.
     const layer = new Konva.Layer({ listening: true });
-    const layout = renderScheme(result, room, roll, catalog, widthPx, heightPx);
+    const layout = renderScheme(result, room, roll, catalog, size.w, size.h);
     const container = containerRef.current;
 
     // Группируем ноды по pieceId: piece + pieceLabel → Konva.Group.
@@ -219,7 +245,7 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
 
     stage.add(layer);
     // setTooltip стабилен (React-гарантия для state-setter'ов), добавлен явно для линтера.
-  }, [result, room, roll, catalog, widthPx, heightPx, setTooltip]);
+  }, [result, room, roll, catalog, size.w, size.h, setTooltip]);
 
   return (
     <div

@@ -4,3 +4,8 @@
   gap: 4px;
   margin-top: var(--space-sm);
 }
+
+/* При wrapping не даём IconButton сжиматься — иначе align-выравнивание ломается. */
+.row > button {
+  flex-shrink: 0;
+}

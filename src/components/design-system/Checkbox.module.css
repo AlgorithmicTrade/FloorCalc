@@ -50,3 +50,17 @@
 .label {
   color: var(--color-ink);
 }
+
+/* Touch devices: расширяем кликабельную область до 44×44 (iOS HIG) без
+   визуального увеличения квадратика, чуть-чуть подрастаем в 22×22. */
+@media (pointer: coarse) {
+  .wrapper {
+    min-height: 44px;
+    padding: 4px 0;
+  }
+
+  .box {
+    width: 22px;
+    height: 22px;
+  }
+}

@@ -47,3 +47,17 @@
 .error {
   border-color: var(--color-error);
 }
+
+/* На узких экранах — full-width footer-pattern с верхним border-radius
+   и тенью кверху (banner стоит над page-content). */
+@media (max-width: 479px) {
+  .banner {
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: auto;
+    max-width: 100%;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+  }
+}

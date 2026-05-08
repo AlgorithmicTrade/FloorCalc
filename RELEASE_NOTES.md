@@ -10,6 +10,46 @@ _Released on 2026-05-08_
 
 - **Web**: мигрировать FloorCalc с Electron на web SPA с хостингом на GitHub Pages
 
+  Решение:
+  - Полностью заменить Electron desktop-стек (electron/, electron-builder, electron-updater, electron-vite) на чисто web-приложение, собираемое в Vite и публикуемое на GitHub Pages.
+  - IPC-persist каталога (`data.json` через main) заменить на `localStorage` с тем же Zod-валидатором — single source of truth теперь в браузере.
+  - electron-updater (lazy-download portable.exe + замена через bat-helper) заменить на polling `/version.json` раз в 10 минут и banner «Доступна версия N — обновите страницу»; cache-busting Vite по hash в именах бандлов гарантирует, что F5 на свежем deploy сразу даёт новую сборку.
+  - Native save-dialog и `webContents.print` заменить на browser-эквиваленты: `<a download>` + `URL.createObjectURL` для PNG, `jsPDF.save()` для PDF, скрытый same-origin iframe для печати (обходит popup-blocker).
+  - Из release-скрипта убрать `verify_autoupdate` — для GitHub Pages нет `latest.yml`/`portable.exe`, проверять и ждать 10 минут после push нечего.
+  - CI переключить с `release.yml` (electron-builder publish) на `deploy-pages.yml` (build → version.json → 404.html → upload-pages-artifact → deploy-pages) на push в main.
+
+  Изменения:
+  - vite.config.ts (новый): base '/FloorCalc/', alias @/@shared, define __APP_VERSION__ из package.json:version, target es2022, outDir dist.
+  - src/shared/catalogSchema.ts (новый): перенос CatalogSchema/RollSchema из удалённого electron/main/schemas.ts; StoredCatalog выводится через z.infer.
+  - src/lib/storage/catalogStorage.ts (новый): loadCatalog/saveCatalog поверх localStorage ключа `floorcalc:catalog:v1`, Zod-валидация, fallback на дефолт при ошибке схемы; QuotaExceededError пробрасывается наверх.
+  - src/global.d.ts (новый): `/// <reference types="vite/client" />` + `declare const __APP_VERSION__: string`.
+  - public/ (новая папка): manifest.json (PWA-минимум: name, scope './', display standalone, иконки 192/512), favicon.ico (копия resources/icon.ico), icon-192.png, icon-512.png (сгенерированы через PowerShell + System.Drawing).
+  - index.html: убран комментарий про file:// CSP, добавлены meta CSP для web (`default-src 'self'; img-src 'self' data: blob:; ...`), `<link rel="icon">`, `<link rel="manifest">`, `<meta name="theme-color">`.
+  - src/store/catalogStore.ts: `api.storage.loadCatalog/saveCatalog` → `loadCatalog/saveCatalog` из @/lib/storage/catalogStorage; импорт RollType из @/domain/types, StoredCatalog из @shared/catalogSchema; шапка-комментарий обновлена под localStorage.
+  - src/store/updateStore.ts: переписан целиком; state `current/next/isDismissed`, `initialize()` ставит setInterval 10 мин, fetch `${BASE_URL}version.json?t=...` с `cache: 'no-store'`, сравнение строкой; `dismiss()` прячет banner.
+  - src/components/update/UpdateBanner.tsx: упрощён до одного UI-state — banner «Доступна версия {next}» с кнопками «Обновить» (location.reload) и «Позже» (dismiss); удалены ветки checking/downloading/ready/error.
+  - src/lib/exportPng.ts: `api.files.savePng` → `<a download>` + `URL.createObjectURL` + revokeObjectURL; локальный type `SaveResult`.
+  - src/lib/exportPdf.ts: `api.files.savePdf` → `doc.save(name)` напрямую (jsPDF делает download сам); SaveResult импортируется из ./exportPng.
+  - src/lib/printScheme.ts: `api.files.print` → скрытый iframe (`position:fixed; w/h:0; border:0`), `contentWindow.document.write(html)`, ожидание load + requestAnimationFrame, `cw.focus(); cw.print()`, удаление через setTimeout 1000ms.
+  - src/components/catalog/RollRow.tsx: `import type { RollType } from '@shared/ipc-contract'` → `from '@/domain/types'`.
+  - package.json: удалены electron, electron-builder, electron-vite, electron-updater и main-entry; scripts свёрнуты в `dev/build/preview/typecheck/test/test:watch` поверх Vite/Vitest.
+  - tsconfig.json: убран reference на tsconfig.electron.json.
+  - tsconfig.node.json: include = vite.config.ts + vitest.config.ts (electron.vite.config.ts удалён).
+  - knip.json: entry/project/vite.config переориентированы на src/main.tsx + vite.config.ts; убраны electron/scripts.
+  - .github/workflows/deploy-pages.yml (новый): на push в main npm ci → typecheck → test → build → генерация dist/version.json → cp index.html 404.html → actions/configure-pages@v5 → actions/upload-pages-artifact@v3 → actions/deploy-pages@v4.
+  - .claude/scripts/release.sh: удалена функция verify_autoupdate целиком (~252 строки), `--no-verify-autoupdate` flag, переменная skip_verify_autoupdate, env RELEASE_SKIP_AUTOUPDATE_VERIFY и пост-релизный if-блок в main.
+  - .claude/commands/push.md: description без «and autoupdate verification», argument-hint без `[--no-verify-autoupdate]`, удалён абзац Post-release autoupdate verification и tip с этим флагом.
+  - Удалены: electron/ (вся папка), electron.vite.config.ts, electron-builder.yml, tsconfig.electron.json, build/app-update.yml, scripts/build-safe.cjs, scripts/kill-processes.cjs, src/shared/ipc-contract.ts, src/ipc/client.ts, .github/workflows/release.yml.
+
+  Эффект:
+  - Кроссплатформенность: открывается на любом современном браузере (десктоп Windows/macOS/Linux + iOS/Android Safari/Chrome) без установки и portable .exe.
+  - URL после первого деплоя: `https://AlgorithmicTrade.github.io/FloorCalc/` — авто-обновление сводится к F5 (новый bundle с другим hash в имени), плюс мягкий banner для долгих сессий.
+  - TypeScript строгий проход (`tsc -p tsconfig.web.json && tsc -p tsconfig.node.json`), 171/171 vitest-тестов в domain-слое зелёные, vite build → 274 KB gzip JS + 11 KB CSS + 192/512 PNG + favicon.
+  - npm-дерево очищено: 442 пакета (electron-стек + транзитивные) удалены.
+  - CI ускорен: убрана сборка Windows-runner electron-builder и пост-релизный 10-минутный polling latest.yml; deploy-pages занимает ≤2 минут.
+  - `/push` больше не висит после `git push origin tag` — релизный shell-скрипт сразу пишет «RELEASE SUCCESSFUL», не ждёт CI artefactов, которых теперь нет.
+  - Domain-слой и тесты не затронуты — алгоритмы раскроя и логика расчёта швов идентичны desktop-версии.
+
 ---
 
 _This release was automatically generated from 1 commits._
