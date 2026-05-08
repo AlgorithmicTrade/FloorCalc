@@ -2,6 +2,57 @@
 
 User-facing release notes for all versions.
 
+## v1.0.14
+
+_Released on 2026-05-08_
+
+### 🔧 Improvements
+
+- **Core**: консолидировать дубликаты типов/схем/констант и удалить мёртвый код
+
+  Решение:
+  - Двухкомпонентный refactor без изменения runtime-поведения: (1) reuse consolidation (4 дубликата → single source of truth, /health-reuse wisp floorcalc-wisp-xsr); (2) Knip-driven dead code removal (15 unused exports/files/deps).
+  - Source-of-truth pattern для типов: RollType канонический в src/domain/types, re-export через src/shared/ipc-contract — устраняет type drift между domain-слоем и transport-границей IPC.
+  - Единый модуль Zod-схем для IPC-границы: electron/main/schemas.ts вместо byte-identical блоков в storage.ts и ipc.ts.
+  - Размерные константы 100..100_000 mm подняты в src/shared/constants.ts как DIMENSION_MIN_MM/DIMENSION_MAX_MM (вместо локальных MIN_MM/MAX_MM в двух UI-формах).
+  - Объединены идентичные интерфейсы экспортёров PrintExportable ≡ PdfExportable → DataUrlExportable.
+  
+  Изменения:
+  - electron/main/schemas.ts (новый): канонический модуль с RollSchema + CatalogSchema.
+  - electron/main/storage.ts: удалены локальные схемы; добавлен import CatalogSchema из ./schemas.js.
+  - electron/main/ipc.ts: удалены локальные схемы; добавлен import CatalogSchema; STORAGE_SCHEMA_VERSION больше не используется.
+  - src/shared/ipc-contract.ts: удалён локальный export type RollType; добавлен import type + export type re-export из ../domain/types.
+  - tsconfig.electron.json: в include добавлен src/domain/types.ts (TS6307 без этой записи).
+  - src/shared/constants.ts: добавлены DIMENSION_MIN_MM = 100, DIMENSION_MAX_MM = 100_000.
+  - src/components/catalog/AddRollForm.tsx: локальные MIN_MM/MAX_MM удалены, импорт из @shared/constants.
+  - src/components/rooms/RoomEditor.tsx: локальные ROOM_MIN_MM/ROOM_MAX_MM удалены, импорт DIMENSION_MAX_MM.
+  - src/lib/printScheme.ts: PrintExportable переименован в DataUrlExportable.
+  - src/lib/exportPdf.ts: локальный PdfExportable удалён, импорт DataUrlExportable из ./printScheme.
+  - src/domain/calculator/index.ts: barrel cleanup до export { selectMixed }.
+  - src/domain/calculator/selectRoll.ts: удалён (unused legacy).
+  - src/domain/validation.ts: удалён (unused legacy).
+  - src/domain/units.ts: удалены unused exports mToMm/mmToM.
+  - src/components/design-system/Tabs.tsx: export interface Tab → interface Tab.
+  - src/components/result/SchemeRenderer.ts: export function getRollTypeColor → function getRollTypeColor.
+  - src/ipc/client.ts: export function getApi → function getApi.
+  - vitest.config.ts: удалён неиспользуемый блок coverage.
+  - package.json: удалены unused deps react-konva, semver, @types/semver; добавлен devDep knip@6.12.1.
+  - package-lock.json: соответственно обновлён.
+  - knip.json (новый): конфигурация Knip.
+  - CHANGELOG.md, RELEASE_NOTES.md: дополнены детальные описания уже выпущенных релизов 1.0.12 и 1.0.13.
+  
+  Эффект:
+  - Single source of truth для типов на IPC-границе: type drift между transport и domain исключён.
+  - Production bundle уменьшен: react-konva, semver исключены из dependencies.
+  - Knip возвращает 0 issues; reuse-detection — 0 high/medium duplications.
+  - Runtime-поведение неизменно: typecheck PASS, vitest 171/171 PASS, electron-vite build PASS.
+  - Beads: 4 reuse-задачи закрыты, wisp floorcalc-wisp-xsr squashed → digest floorcalc-90u.
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.0.13
 
 _Released on 2026-05-08_
