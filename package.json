@@ -5,8 +5,10 @@
   "description": "FloorCalc — desktop-калькулятор расхода рулонных напольных покрытий",
   "main": "out/main/index.js",
   "type": "module",
+  "packageManager": "npm@10.8.2",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
   },
   "scripts": {
     "dev": "electron-vite dev",
