@@ -2,6 +2,18 @@
 
 User-facing release notes for all versions.
 
+## v1.0.12
+
+_Released on 2026-05-08_
+
+### ✨ New Features
+
+- **Security**: закрыть IPC validation gap и усилить CI release pipeline
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.0.11
 
 _Released on 2026-05-08_

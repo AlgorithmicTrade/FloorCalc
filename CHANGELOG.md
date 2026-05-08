@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.12] - 2026-05-08
+
+### Added
+- **Security**: закрыть IPC validation gap и усилить CI release pipeline (c3574af)
+
 ## [1.0.11] - 2026-05-08
 
 ### Fixed
