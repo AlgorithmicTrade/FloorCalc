@@ -2,6 +2,41 @@
 
 User-facing release notes for all versions.
 
+## v1.1.5
+
+_Released on 2026-05-08_
+
+### 🐛 Bug Fixes
+
+- **Web**: убрать тень у номера рулона, выровнять collapse-кнопку и обвести каталог
+
+  Решение:
+  - Убрать белую обводку у номеров кусков на схеме — visual-noise на мелких цифрах.
+  - Уменьшить collapse-кнопку сайдбара до паритета с бейджем версии и переместить её на правый край сайдбара (на разделитель), чтобы устранить наплыв на карточку RoomEditor и асимметрию.
+  - Обернуть RollCatalog в Card surface-1 padding-md по образцу RoomEditor — единая визуальная рамка для блоков левой колонки.
+  
+  Изменения:
+  - src/components/result/SchemeView.tsx:
+    - pieceLabel Konva.Text: удалены stroke / strokeWidth / fillAfterStrokeEnabled — цифра рисуется чистым fill.
+  - src/components/layout/AppShell.module.css:
+    - .sidebarToggle (>=768px): top 5->6, left 84->390, width/height 28->20, border-radius r-sm->r-xs, добавлен box-sizing:border-box, transition расширен на left 200ms ease.
+    - Добавлен модификатор .sidebarToggleCollapsed { left: 0 } для синхронной анимации с сайдбаром.
+  - src/App.tsx:
+    - sidebarToggle button: className комбинирует .sidebarToggleCollapsed при sidebarCollapsed.
+    - SVG chevron: width/height 16->12 пропорционально новому размеру кнопки.
+  - src/components/catalog/RollCatalog.tsx:
+    - Корневой div заменён на Card surface-1 padding-md; добавлен импорт Card.
+  
+  Эффект:
+  - Цифры рулонов на схеме читаются как чистый цветной fill — без белой окантовки, особенно заметно на мелких кусках 5-8px.
+  - Collapse-кнопка визуально равна бейджу версии (20x20 vs ~18px), сидит на правой границе сайдбара симметрично бейджу слева, не пересекает карточку RoomEditor; при сворачивании плавно уезжает в левый край (200ms ease, синхронно с grid-анимацией).
+  - Каталог рулонов получил такую же рамку и фон, как блок параметров помещения — левая колонка читается как пара согласованных карточек.
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.1.4
 
 _Released on 2026-05-08_
