@@ -6,9 +6,36 @@ User-facing release notes for all versions.
 
 _Released on 2026-05-08_
 
-### ✨ New Features
+### 🔒 Security & Hardening
 
 - **Security**: закрыть IPC validation gap и усилить CI release pipeline
+
+  Решение:
+  - Закрыть HIGH архитектурный пробел: каналы FILES_SAVE_PNG/PDF/PRINT принимали renderer-payload через TypeScript type-cast без runtime-проверок (контракт требует Zod-валидации всех IPC-границ; STORAGE_SAVE был единственным валидируемым).
+  - Усилить supply-chain устойчивость release.yml: SHA-pin GitHub Actions (mutable @v4 → commit SHA), сужение permissions с workflow-уровня до job-level (default-deny), concurrency guard от race condition при force-push тега, npm audit для production-зависимостей.
+  - Зафиксировать package manager (npm@10.8.2) и engines.npm — детерминизм CI и локальной сборки.
+  - Актуализировать CLAUDE.md: устаревший bootstrap-блок заменён на описание реального проекта (стек, архитектура, npm-скрипты, slash-команды, Beads workflow, project rules).
+
+  Изменения:
+  - electron/main/ipc.ts:
+    - Добавлены SaveBufferArgs (z.tuple ArrayBuffer ≤50MB + filename regex `/^[^\\/:*?"<>|\x00-\x1f]+$/u`) и PrintHtmlArg (`z.string().max(5_000_000)`).
+    - FILES_SAVE_PNG/PDF/PRINT handlers применяют `.parse(args)` / `.parse(html)` до downstream-вызовов savePng/savePdf/printHtml. Закрывает SEC-H01, побочно SEC-M03 (path traversal в defaultPath) и SEC-L10 (HTML size DoS).
+  - .github/workflows/release.yml:
+    - concurrency: `group=release-${{ github.ref }}`, `cancel-in-progress: false` (SEC-L07).
+    - `permissions: {}` на workflow + `permissions.contents: write` только в job `build` (SEC-M05).
+    - actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1, actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2 (SEC-M04).
+    - Шаг "npm audit (production deps)" после npm ci с `continue-on-error: true` (SEC-L08).
+  - package.json:
+    - `packageManager: "npm@10.8.2"` (Corepack).
+    - `engines.npm: ">=10.0.0"` добавлено к существующему engines.node.
+  - CLAUDE.md:
+    - Полная актуализация: bootstrap-блок заменён описанием Electron 32 + React 19 + TS 5 стека, обзора слоёв (domain/UI/main/preload/IPC), npm-скриптов, slash-команд, health-workflows с правильным quality-gate для FloorCalc, Beads-флоу, project rules.
+
+  Эффект:
+  - Защитная поверхность IPC-границы соответствует инварианту проекта; renderer-payload строго валидируется до достижения savePng/savePdf/printHtml. Регрессий нет: typecheck PASS, vitest 171/171 PASS.
+  - CI-pipeline release устойчив к compromise upstream-actions (SHA-pinning), least-privilege на job-уровне, защита от race condition при force-push, видимость уязвимостей зависимостей в логах CI.
+  - Reproducibility сборки повышена через зафиксированный package manager.
+  - Документация CLAUDE.md соответствует фактическому состоянию проекта v1.0.11.
 
 ---
 
