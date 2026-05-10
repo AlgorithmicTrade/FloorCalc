@@ -51,6 +51,13 @@ export interface SchemeViewProps {
    * Если не задан — используется фиксированный aspect из widthPx/heightPx.
    */
   roomAspect?: number;
+  /**
+   * Колбэк для клика по пустой (фоновой) области схемы — НЕ по piece.
+   * Вызывается ТОЛЬКО когда нет открытого pinned-tooltip (иначе тот закрывается,
+   * как раньше). Используется для copy-debug-info: ResultCard формирует текстовый
+   * снимок схемы и кладёт в clipboard, показывая короткий toast.
+   */
+  onCopyDebug?: () => void;
 }
 
 const FRAME_STROKE = '#3b3d45';
@@ -62,9 +69,24 @@ const STATS_TEXT_FILL = '#cfd2d8';
 const STATS_TEXT_FILL_DETAIL = '#9aa0aa';
 
 export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function SchemeView(
-  { result, room, roll, catalog, widthPx: maxWidthPx = 640, heightPx: maxHeightPx = 360, roomAspect, className = '' },
+  {
+    result,
+    room,
+    roll,
+    catalog,
+    widthPx: maxWidthPx = 640,
+    heightPx: maxHeightPx = 360,
+    roomAspect,
+    className = '',
+    onCopyDebug,
+  },
   ref,
 ) {
+  // Свежий ref на onCopyDebug — читается из Konva-замыкания внутри useEffect
+  // без добавления callback в deps (иначе при каждом ре-рендере родителя
+  // схема перерисовывалась бы целиком). React-handler стабильности не даёт.
+  const onCopyDebugRef = useRef<typeof onCopyDebug>(onCopyDebug);
+  onCopyDebugRef.current = onCopyDebug;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const stageRef = useRef<Konva.Stage | null>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; lines: string[]; pieceId: string | null } | null>(null);
@@ -189,11 +211,22 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
       pieceLabel: Konva.Text | null;
     }>();
 
-    // Маппинг pieceId → Piece для формирования строк tooltip при hover.
-    const pieceById = new Map<string, Piece>();
+    // Маппинг pieceId → { piece, partRealMm? }.
+    // Источник истины — piece-ноды из layout (а не result.pieces), потому что
+    // в free-режиме один Piece разбивается на несколько visible-part нод
+    // с собственными pieceId (`-part-N`). Для tooltip нужен размер ВИДИМОЙ
+    // части (partRealMm), а для агрегации leftover — исходный Piece.
+    const basePieceMap = new Map<string, Piece>();
     for (const p of result.pieces) {
-      const pid = `${p.rollTypeId}-${p.placedAtX}-${p.placedAtY}`;
-      pieceById.set(pid, p);
+      basePieceMap.set(`${p.rollTypeId}-${p.placedAtX}-${p.placedAtY}`, p);
+    }
+    const pieceById = new Map<string, { piece: Piece; partRealMm?: { width: number; length: number } }>();
+    for (const node of layout.nodes) {
+      if (node.kind !== 'piece') continue;
+      const baseId = node.partOfPieceId ?? node.pieceId;
+      const piece = basePieceMap.get(baseId);
+      if (!piece) continue;
+      pieceById.set(node.pieceId, { piece, partRealMm: node.partRealMm });
     }
 
     // Маппинг rollTypeId → RollType для быстрого поиска типа рулона.
@@ -209,6 +242,16 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
         if (!pieceGroups.has(pid)) {
           pieceGroups.set(pid, { pieceRect: null, pieceLabel: null });
         }
+      }
+    }
+
+    // Polygon-маска для клипа кусков — применяется к каждой piece-Group, если
+    // у piece-ноды задан clipPolygon (свободная планировка).
+    let clipPolygon: readonly { x: number; y: number }[] | null = null;
+    for (const node of layout.nodes) {
+      if (node.kind === 'piece' && node.clipPolygon) {
+        clipPolygon = node.clipPolygon;
+        break;
       }
     }
 
@@ -257,13 +300,31 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
     for (const [pieceId, grp] of pieceGroups) {
       if (!grp.pieceRect) continue;
 
-      const group = new Konva.Group({ listening: true });
+      // Если у нас свободная планировка — клипаем piece-Group по polygon формы.
+      // clipFunc выполняется в Konva canvas-context во время отрисовки группы
+      // (в координатах группы; группа использует stage-координаты pieces без
+      // дополнительной трансформации, поэтому polygon передаётся как есть).
+      const groupConfig: Konva.GroupConfig = { listening: true };
+      if (clipPolygon) {
+        const poly = clipPolygon;
+        groupConfig.clipFunc = (ctx: Konva.Context): void => {
+          if (poly.length < 3) return;
+          ctx.beginPath();
+          ctx.moveTo(poly[0]!.x, poly[0]!.y);
+          for (let i = 1; i < poly.length; i++) {
+            ctx.lineTo(poly[i]!.x, poly[i]!.y);
+          }
+          ctx.closePath();
+        };
+      }
+
+      const group = new Konva.Group(groupConfig);
       group.add(grp.pieceRect);
       if (grp.pieceLabel) group.add(grp.pieceLabel);
 
-      const piece = pieceById.get(pieceId);
-      const tooltipLines = piece
-        ? computeTooltipLines(piece, result.pieces, rollByTypeId, roll)
+      const entry = pieceById.get(pieceId);
+      const tooltipLines = entry
+        ? computeTooltipLines(entry.piece, result.pieces, rollByTypeId, roll, entry.partRealMm)
         : [];
 
       // Вспомогательная функция: вычисляет позицию tooltip с clamp-ом
@@ -326,15 +387,21 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
 
     stage.add(layer);
 
-    // Тап/клик на пустое место Stage (вне piece-группы) → закрыть tooltip.
+    // Тап/клик на пустое место Stage (вне piece-группы).
     // Piece-группы останавливают всплытие через e.cancelBubble = true,
     // поэтому сюда доходят только события на фоне канваса.
+    //  - Если открыт pinned-tooltip (тап по piece) → закрываем его, как раньше.
+    //  - Если pinned-tooltip нет → это намеренный клик «по схеме», вызываем
+    //    onCopyDebug (в ResultCard это копирует текстовый снимок в clipboard).
     stage.on('click tap', (e) => {
-      if (e.target === stage) {
+      if (e.target !== stage) return;
+      if (pinnedRef.current) {
         setTooltip(null);
         setPinned(false);
         if (container) container.style.cursor = 'default';
+        return;
       }
+      onCopyDebugRef.current?.();
     });
 
     // setTooltip / setPinned стабильны (React-гарантия для state-setter'ов), добавлены явно для линтера.
@@ -345,7 +412,6 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
       ref={containerRef}
       className={`${styles.wrap} ${className}`}
       data-print-target
-      style={{ position: 'relative' }}
     >
       {tooltip && (
         <div className={styles.tooltip} style={{ left: tooltip.x, top: tooltip.y }}>
@@ -363,22 +429,30 @@ export const SchemeView = forwardRef<SchemeViewHandle, SchemeViewProps>(function
  * Показывает размеры куска и площадь остатка обрезка для всего рулона,
  * из которого этот кусок был вырезан (агрегируется по piece.rollIndex).
  *
- * @param piece     - кусок покрытия.
- * @param allPieces - все pieces расчёта (для суммирования по rollIndex).
- * @param rollMap   - маппинг rollTypeId → RollType из каталога.
- * @param fallback  - резервный тип рулона, если rollTypeId не найден в каталоге.
+ * @param piece       - физический кусок покрытия (исходный bbox).
+ * @param allPieces   - все pieces расчёта (для суммирования по rollIndex).
+ * @param rollMap     - маппинг rollTypeId → RollType из каталога.
+ * @param fallback    - резервный тип рулона, если rollTypeId не найден в каталоге.
+ * @param partRealMm  - если задано, в первой строке показываем размер ВИДИМОЙ части
+ *                      (для polygon-aware partition в free-режиме). Иначе — bbox piece.
  */
 function computeTooltipLines(
   piece: Piece,
   allPieces: readonly Piece[],
   rollMap: ReadonlyMap<string, RollType>,
   fallback: RollType,
+  partRealMm?: { width: number; length: number },
 ): string[] {
   const pieceRoll = rollMap.get(piece.rollTypeId) ?? fallback;
-  const lines: string[] = [
-    `Кусок: ${formatMTrim(piece.width)} × ${formatMTrim(piece.length)}`,
-  ];
+  const lines: string[] = [];
+  if (partRealMm) {
+    // Free-режим, polygon-aware part: показываем размер видимой части.
+    lines.push(`Видимый кусок: ${formatMTrim(partRealMm.width)} × ${formatMTrim(partRealMm.length)}`);
+  } else {
+    lines.push(`Кусок: ${formatMTrim(piece.width)} × ${formatMTrim(piece.length)}`);
+  }
   // Суммарная использованная площадь рулона (все pieces с тем же rollIndex).
+  // Считается по физическим Piece (bbox) — это корректно: рулон режется по bbox.
   let usedArea = 0;
   for (const p of allPieces) {
     if (p.rollIndex === piece.rollIndex) {
@@ -411,6 +485,23 @@ function buildStaticKonvaNode(
         fill: FRAME_FILL,
         listening: false,
       });
+
+    case 'roomPolygon': {
+      // Замкнутая Konva.Line: заливка фоном-фреймом, обводка цветом фрейма.
+      // Преобразуем массив { x, y } в плоский массив [x0,y0,x1,y1,...].
+      const pts: number[] = [];
+      for (const p of node.points) {
+        pts.push(p.x, p.y);
+      }
+      return new Konva.Line({
+        points: pts,
+        closed: true,
+        fill: FRAME_FILL,
+        stroke: FRAME_STROKE,
+        strokeWidth: 2,
+        listening: false,
+      });
+    }
 
     case 'roomLabel':
       return new Konva.Text({

@@ -14,6 +14,7 @@ import { useCatalogStore, selectActiveRolls } from '@/store/catalogStore';
 import { Card } from '@/components/design-system/Card';
 import { EmptyState } from '@/components/layout/EmptyState';
 import { ResultCard } from '@/components/result/ResultCard';
+import { validateShape } from '@/domain/shape';
 import styles from './RoomResultPanel.module.css';
 
 export function RoomResultPanel() {
@@ -26,15 +27,36 @@ export function RoomResultPanel() {
   if (!activeRoom) return null;
 
   const hasGeometry = activeRoom.width > 0 && activeRoom.length > 0;
+  const isFree = (activeRoom.layout ?? 'rect') === 'free';
+
+  // Для свободной формы: если shape присутствует и контур замкнут, но размеры
+  // не сошлись — пользователь видит конкретную причину, а не общее «завершите».
+  let freeTitle = 'Завершите планировку';
+  let freeHint = 'Замкните контур по точкам сетки и задайте размер каждой стены.';
+  if (isFree && activeRoom.shape && activeRoom.shape.walls.length > 0) {
+    const v = validateShape(activeRoom.shape);
+    if (v.closed && v.allSized && !v.consistent) {
+      freeTitle = 'Размеры стен не согласованы';
+      freeHint =
+        'Суммы противоположных стен должны совпадать. Проверьте размеры — иначе схема не построится.';
+    } else if (v.closed && !v.allSized) {
+      freeTitle = 'Заполните размеры стен';
+      freeHint = 'Контур замкнут, но не у всех стен задан размер.';
+    }
+  }
 
   return (
     <div className={styles.panel}>
       {!hasGeometry ? (
         <Card surface="surface-1" padding="md">
-          <EmptyState
-            title="Введите размеры помещения"
-            hint="Ширина и длина в метрах."
-          />
+          {isFree ? (
+            <EmptyState title={freeTitle} hint={freeHint} />
+          ) : (
+            <EmptyState
+              title="Введите размеры помещения"
+              hint="Ширина и длина в метрах."
+            />
+          )}
         </Card>
       ) : (
         <>

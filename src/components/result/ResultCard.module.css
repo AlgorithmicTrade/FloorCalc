@@ -4,6 +4,14 @@
   gap: var(--space-sm);
 }
 
+/* Wrapper над SchemeView для абсолютного позиционирования copy-debug toast.
+   SchemeView сам по себе уже position:relative, но toast рендерится из ResultCard
+   (snapshot текста доступен здесь), поэтому нужен общий контейнер. */
+.schemeWrap {
+  position: relative;
+  display: block;
+}
+
 .header {
   display: flex;
   align-items: center;

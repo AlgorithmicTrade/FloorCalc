@@ -22,9 +22,20 @@
 
 import type { CalculationResult, Room, RollType } from '@/domain/types';
 import { formatMTrim, formatAreaTrim } from '@/domain/units';
+import {
+  buildShapePolygon,
+  polygonAreaMm2,
+  clipRectByOrthoPolygon,
+  countVisibleSegments,
+} from '@/domain/shape';
 
 export type SchemeNode =
   | { kind: 'roomFrame'; x: number; y: number; width: number; height: number }
+  | {
+      /** Контур свободной планировки — замкнутый ортогональный полигон в SVG-координатах. */
+      kind: 'roomPolygon';
+      points: readonly { x: number; y: number }[];
+    }
   | {
       kind: 'piece';
       x: number;
@@ -33,8 +44,22 @@ export type SchemeNode =
       height: number;
       fill: string;
       rollIndex: number;
-      /** Уникальный идентификатор куска — используется для группировки в SchemeView. */
+      /** Уникальный идентификатор куска — используется для группировки в SchemeView.
+       *  При polygon-aware split (free-режим) каждый visible-part получает свой
+       *  pieceId с суффиксом `-part-N`, чтобы Konva-группы и tooltip’ы могли
+       *  обрабатывать каждую видимую часть независимо. */
       pieceId: string;
+      /** Если задано — клипать piece по этому polygon (SVG-координаты).
+       *  В free-режиме после polygon-aware partition НЕ передаётся — каждая
+       *  видимая часть уже представлена отдельным rect внутри polygon. Поле
+       *  оставлено для возможных fallback-сценариев. */
+      clipPolygon?: readonly { x: number; y: number }[];
+      /** ID исходного куска до polygon-aware split (без `-part-N`). Используется
+       *  в SchemeView для агрегаций по физическому куску (suммы, leftover). */
+      partOfPieceId?: string;
+      /** Размер видимой части в mm (real, не SVG-pixels). Используется в tooltip
+       *  для показа фактической геометрии видимой части piece. */
+      partRealMm?: { width: number; length: number };
     }
   | { kind: 'roomLabel'; x: number; y: number; text: string; fontSize: number }
   | {
@@ -154,94 +179,165 @@ export function renderScheme(
   const offsetX = MARGIN + (innerW - roomPxW) / 2;
   const offsetY = MARGIN + (innerH - roomPxH) / 2;
 
-  // Frame — сначала, чтобы куски рисовались поверх и видны были границы.
-  nodes.push({
-    kind: 'roomFrame',
-    x: offsetX,
-    y: offsetY,
-    width: roomPxW,
-    height: roomPxH,
-  });
+  // Свободная планировка: вычисляем polygon в SVG-координатах для клипа кусков
+  // и отрисовки контура. Если shape невалиден — возвращаемся к bbox-фрейму.
+  const realPolygon = room.layout === 'free' && room.shape ? buildShapePolygon(room.shape) : null;
+  const svgPolygon: readonly { x: number; y: number }[] | null = realPolygon
+    ? realPolygon.vertices.map((v) => ({
+        x: offsetX + v.x * scale,
+        y: offsetY + v.y * scale,
+      }))
+    : null;
+
+  if (svgPolygon) {
+    // Контур-полигон — фон под куски (заливка + обводка).
+    nodes.push({
+      kind: 'roomPolygon',
+      points: svgPolygon,
+    });
+  } else {
+    // Прямоугольный frame — сначала, чтобы куски рисовались поверх и видны границы.
+    nodes.push({
+      kind: 'roomFrame',
+      x: offsetX,
+      y: offsetY,
+      width: roomPxW,
+      height: roomPxH,
+    });
+  }
 
   // === Pieces ===
   // Цвет каждого куска — по его собственному rollTypeId (поддержка mixed-type укладки).
   // При mono-type все куски одного цвета; при mixed — каждый тип своим цветом из палитры.
+  //
+  // Free-режим (realPolygon !== null): применяем polygon-aware partition —
+  // bbox-кусок разбивается на максимальные ortho-rectangles, лежащие ВНУТРИ
+  // формы помещения. Это решает 2 UX-проблемы:
+  //  1. pieceLabel рендерится в центре каждой ВИДИМОЙ части → метка не пропадает
+  //     в клипнутой зоне (П-формы и т.п.).
+  //  2. Tooltip показывает размер видимой части, а не вводящего в заблуждение bbox.
+  // Rect-режим (realPolygon === null): один piece-node на физический Piece,
+  // как и раньше — никаких visible-частей не нужно.
   for (const p of result.pieces) {
-    const x = offsetX + p.placedAtX * scale;
-    const y = offsetY + p.placedAtY * scale;
-    const w = p.width * scale;
-    const h = p.length * scale;
     const pieceFill = getRollTypeColor(p.rollTypeId, catalog);
-    // Стабильный ID куска: rollTypeId + позиция укладки.
-    const pieceId = `${p.rollTypeId}-${p.placedAtX}-${p.placedAtY}`;
+    // Стабильный ID исходного куска (без -part-N) — нужен для агрегаций в tooltip.
+    const basePieceId = `${p.rollTypeId}-${p.placedAtX}-${p.placedAtY}`;
 
-    nodes.push({
-      kind: 'piece',
-      x,
-      y,
-      width: w,
-      height: h,
-      fill: pieceFill,
-      rollIndex: p.rollIndex,
-      pieceId,
-    });
+    // Список видимых частей в real-mm координатах внутри bbox формы.
+    // Для rect-режима — одна часть, совпадающая с самим piece (без обрезки).
+    const visibleParts = realPolygon
+      ? clipRectByOrthoPolygon(
+          { x: p.placedAtX, y: p.placedAtY, width: p.width, height: p.length },
+          realPolygon.vertices,
+        )
+      : [{ x: p.placedAtX, y: p.placedAtY, width: p.width, height: p.length }];
 
-    // Номер рулона (1-based). На схеме отображается только он —
-    // размеры кусков не показываются как подписи (доступны в hover-tooltip).
-    //
-    // Порог 5px — минимум, при котором одиночная цифра читаема при fontSize=6
-    // (одиночный digit ≈ 3.3px ширина, укладывается в 5×5 box).
-    // fontSize адаптируется к min(w, h), чтобы корректно работать на кусках
-    // с малой высотой (полосы 1м при scale~4px/m на мобильных) и на узких кусках.
-    // Для многозначных номеров (≥10) дополнительно ограничиваем по ширине:
-    //   digits * 0.55 * fontSize ≤ w - 2.
-    const minSide = Math.min(w, h);
-    if (minSide >= 5) {
-      const digits = String(p.rollIndex + 1).length;
-      // Расширенная шкала baseFs: добавлен уровень 6px для очень маленьких кусков.
-      const baseFs = h < 12 ? 6 : h < 18 ? 8 : h < 30 ? 11 : h < 60 ? 14 : 18;
-      // Текст должен помещаться по ширине: digits * 0.55 * fontSize ≤ w - 2.
-      const maxFsByWidth = Math.floor((w - 2) / (0.55 * Math.max(1, digits)));
-      // Текст должен помещаться по высоте с минимальным зазором.
-      const maxFsByHeight = Math.floor(h - 2);
-      const pieceLabelFontSize = Math.max(5, Math.min(baseFs, maxFsByWidth, maxFsByHeight));
+    // Piece полностью вне polygon — не рендерим (физически невозможно при
+    // корректном раскрое, но защита от граничных случаев формы).
+    if (visibleParts.length === 0) continue;
+
+    for (let partIdx = 0; partIdx < visibleParts.length; partIdx++) {
+      const part = visibleParts[partIdx]!;
+      const x = offsetX + part.x * scale;
+      const y = offsetY + part.y * scale;
+      const w = part.width * scale;
+      const h = part.height * scale;
+      // Уникальный ID части. В rect-режиме (одна часть) суффикс не добавляется,
+      // чтобы сохранить обратную совместимость с тестами и существующей логикой
+      // SchemeView (pieceId == basePieceId).
+      const partPieceId =
+        realPolygon && visibleParts.length > 1
+          ? `${basePieceId}-part-${partIdx}`
+          : basePieceId;
+
       nodes.push({
-        kind: 'pieceLabel',
+        kind: 'piece',
         x,
         y,
         width: w,
         height: h,
-        text: String(p.rollIndex + 1),
-        fontSize: pieceLabelFontSize,
-        pieceId,
+        fill: pieceFill,
+        rollIndex: p.rollIndex,
+        pieceId: partPieceId,
+        // В free-режиме clipPolygon БОЛЬШЕ НЕ передаётся — visible-part уже
+        // ortho-rectangle внутри polygon. SchemeView не активирует Konva clipFunc
+        // → нет двойного клипа и метки не теряются.
+        ...(realPolygon
+          ? { partOfPieceId: basePieceId, partRealMm: { width: part.width, length: part.height } }
+          : {}),
       });
+
+      // Номер рулона (1-based). На схеме отображается только он —
+      // размеры кусков не показываются как подписи (доступны в hover-tooltip).
+      //
+      // Порог 5px — минимум, при котором одиночная цифра читаема при fontSize=6.
+      // fontSize адаптируется к min(w, h) ВИДИМОЙ части — это и решает проблему
+      // «метка пропала», т.к. центр считается от visible-rect.
+      const minSide = Math.min(w, h);
+      if (minSide >= 5) {
+        const digits = String(p.rollIndex + 1).length;
+        const baseFs = h < 12 ? 6 : h < 18 ? 8 : h < 30 ? 11 : h < 60 ? 14 : 18;
+        const maxFsByWidth = Math.floor((w - 2) / (0.55 * Math.max(1, digits)));
+        const maxFsByHeight = Math.floor(h - 2);
+        const pieceLabelFontSize = Math.max(5, Math.min(baseFs, maxFsByWidth, maxFsByHeight));
+        nodes.push({
+          kind: 'pieceLabel',
+          x,
+          y,
+          width: w,
+          height: h,
+          text: String(p.rollIndex + 1),
+          fontSize: pieceLabelFontSize,
+          pieceId: partPieceId,
+        });
+      }
     }
   }
 
   // Размер ширины помещения (сверху по центру) и длины (слева по центру).
+  // Для свободной формы — обозначаем bbox-габариты с пометкой «≈», т.к. реальная
+  // форма не прямоугольник; это даёт пользователю общий ориентир по масштабу.
   const roomLabelFontSize = getRoomLabelFontSize(stageWidth);
   // При уменьшенном margin (20px) корректируем вертикальный отступ подписи ширины.
   const labelTopOffset = MARGIN >= 30 ? 22 : 14;
+  const widthLabel = svgPolygon ? `≈${formatMTrim(room.width)}` : formatMTrim(room.width);
+  const lengthLabel = svgPolygon ? `≈${formatMTrim(room.length)}` : formatMTrim(room.length);
   nodes.push({
     kind: 'roomLabel',
     x: offsetX + roomPxW / 2 - 30,
     y: offsetY - labelTopOffset,
-    text: formatMTrim(room.width),
+    text: widthLabel,
     fontSize: roomLabelFontSize,
   });
   nodes.push({
     kind: 'roomLabel',
     x: offsetX - MARGIN + 2,
     y: offsetY + roomPxH / 2 - 8,
-    text: formatMTrim(room.length),
+    text: lengthLabel,
     fontSize: roomLabelFontSize,
   });
 
   // === Stats: 2 строки ===
   // Строка 1 — общие метрики (один statsRow, bold).
+  // Для свободной планировки (если polygon валиден) добавляем waste от формы:
+  // площадь bbox - площадь polygon = поверхность, которая будет отрезана при
+  // подгонке прямоугольного раскроя под форму помещения.
+  const polygonShapeWaste = realPolygon
+    ? Math.max(0, room.width * room.length - polygonAreaMm2(realPolygon.vertices))
+    : 0;
+  const wasteText = polygonShapeWaste > 0
+    ? `Обрезки: ${formatAreaTrim(result.wasteAreaMm2)} + ${formatAreaTrim(polygonShapeWaste)} (форма)`
+    : `Обрезки: ${formatAreaTrim(result.wasteAreaMm2)}`;
+  // «Кусков» — физическое число visible-сегментов после кройки по форме.
+  // Для прямоугольной комнаты === result.pieces.length; для свободной формы
+  // (П, T и т.д.) каждая полоса, проходящая сквозь вырез, расщепляется на 2+
+  // ortho-rectangles → это правильное число для пользователя.
+  const physicalPieceCount = realPolygon
+    ? countVisibleSegments(result.pieces, realPolygon.vertices)
+    : result.pieces.length;
   const summaryText =
-    `Рулонов: ${result.rollsUsed}    Кусков: ${result.pieces.length} шт.    ` +
-    `Обрезки: ${formatAreaTrim(result.wasteAreaMm2)}`;
+    `Рулонов: ${result.rollsUsed}    Кусков: ${physicalPieceCount} шт.    ` +
+    wasteText;
 
   nodes.push({
     kind: 'statsRow',

@@ -7,10 +7,16 @@
  *
  * На старте создаётся одно пустое помещение, чтобы UI было что показать
  * и пользователь сразу мог начать вводить размеры.
+ *
+ * Поддерживается два режима задания геометрии (Room.layout):
+ *  - 'rect' (default) — пользователь вводит width × length напрямую.
+ *  - 'free' — пользователь рисует ортогональный полигон в FreeShapeEditor;
+ *    width/length derived из bounding box полигона при каждом обновлении shape.
  */
 
 import { create } from 'zustand';
-import type { Room } from '@/domain/types';
+import type { Room, RoomShape } from '@/domain/types';
+import { buildShapePolygon } from '@/domain/shape';
 
 interface RoomsState {
   rooms: Room[];
@@ -18,7 +24,17 @@ interface RoomsState {
 
   addRoom: () => void;
   removeRoom: (id: string) => void;
-  updateRoom: (id: string, patch: Partial<Pick<Room, 'name' | 'width' | 'length'>>) => void;
+  updateRoom: (
+    id: string,
+    patch: Partial<Pick<Room, 'name' | 'width' | 'length'>>,
+  ) => void;
+  /** Переключить режим задания геометрии активного помещения. При смене rect→free
+   *  shape сбрасывается; при free→rect shape удаляется, width/length сохраняются
+   *  как последний bbox (если был валидный shape). */
+  setRoomLayout: (id: string, layout: 'rect' | 'free') => void;
+  /** Обновить shape (free-layout). Автоматически пересчитывает width/length
+   *  из bbox полигона; если shape невалиден — width/length=0. */
+  setRoomShape: (id: string, shape: RoomShape) => void;
   setActive: (id: string) => void;
 }
 
@@ -44,7 +60,8 @@ function makeRoom(existing: Room[]): Room {
     id: `room-${Date.now()}-${n}`,
     name: `Помещение ${n}`,
     width: 0,
-    length: 0
+    length: 0,
+    layout: 'rect',
   };
 }
 
@@ -70,12 +87,46 @@ export const useRoomsStore = create<RoomsState>((set) => {
         return { rooms: next, activeRoomId: nextActive };
       }),
 
-    updateRoom: (id: string, patch: Partial<Pick<Room, 'name' | 'width' | 'length'>>): void =>
+    updateRoom: (
+      id: string,
+      patch: Partial<Pick<Room, 'name' | 'width' | 'length'>>,
+    ): void =>
       set((s) => ({
-        rooms: s.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r))
+        rooms: s.rooms.map((r) => (r.id === id ? { ...r, ...patch } : r)),
       })),
 
-    setActive: (id: string): void => set({ activeRoomId: id })
+    setRoomLayout: (id: string, layout: 'rect' | 'free'): void =>
+      set((s) => ({
+        rooms: s.rooms.map((r) => {
+          if (r.id !== id) return r;
+          if (layout === 'rect') {
+            // free→rect: удаляем shape, width/length сохраняем (если был bbox).
+            const { shape: _shape, ...rest } = r;
+            return { ...rest, layout: 'rect' };
+          }
+          // rect→free: сбрасываем shape (пользователь нарисует с нуля),
+          // width/length=0 пока контур не задан.
+          return { ...r, layout: 'free', shape: undefined, width: 0, length: 0 };
+        }),
+      })),
+
+    setRoomShape: (id: string, shape: RoomShape): void =>
+      set((s) => ({
+        rooms: s.rooms.map((r) => {
+          if (r.id !== id) return r;
+          // Derived width/length из bbox полигона; если shape невалиден — 0.
+          const polygon = buildShapePolygon(shape);
+          return {
+            ...r,
+            layout: 'free',
+            shape,
+            width: polygon?.bboxWidth ?? 0,
+            length: polygon?.bboxLength ?? 0,
+          };
+        }),
+      })),
+
+    setActive: (id: string): void => set({ activeRoomId: id }),
   };
 });
 

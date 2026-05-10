@@ -11,7 +11,8 @@
       "Bash(rm -f /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.bat /c/Users/Uchetko/AppData/Local/Temp/floorcalc-update-*.log /c/Users/Uchetko/AppData/Local/Temp/floorcalc-spawn.log /c/Users/Uchetko/AppData/Local/Temp/floorcalc-pstest.log)",
       "Read(//c/Users/Uchetko/AppData/Local/floorcalc-updater/pending//**)",
       "Bash(git -C /g/Project-X/FloorCalc show v1.0.8:electron-builder.yml)",
-      "Bash(git -C /g/Project-X/FloorCalc show v1.0.9:electron-builder.yml)"
+      "Bash(git -C /g/Project-X/FloorCalc show v1.0.9:electron-builder.yml)",
+      "Bash(npx vitest *)"
     ]
   }
 }

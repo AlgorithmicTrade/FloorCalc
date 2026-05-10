@@ -21,8 +21,10 @@ import { formatM } from '@/domain/units';
 import { hashCalculationKey } from '@/lib/hash';
 import { resultsCache } from '@/store/resultsCache';
 import { useCatalogStore } from '@/store/catalogStore';
+import { formatSchemeDebugText } from '@/lib/schemeDebugText';
 import type { Mode, RollType, Room, CalculationResult } from '@/domain/types';
 import { SchemeView, type SchemeViewHandle } from './SchemeView';
+import schemeStyles from './SchemeView.module.css';
 import { ResultText, formatResultAsPlainText } from './ResultText';
 import { ResultActions } from './ResultActions';
 import styles from './ResultCard.module.css';
@@ -153,6 +155,34 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
 
   const modeTitle = MODE_TITLES[mode];
 
+  // Toast при copy-debug-info по клику на пустую часть схемы.
+  // { kind: 'success' | 'error', text } — окраска отличается через CSS-класс.
+  // Таймер сбрасывается через ref, чтобы повторный клик не создавал
+  // несинхронизированных setTimeout (старый автоматически перезапишется).
+  const [copyToast, setCopyToast] = useState<{ kind: 'success' | 'error'; text: string } | null>(
+    null,
+  );
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // На размонтировании компонента очищаем pending timer, чтобы setState
+  // не вызвался на unmounted-ноде (React в strict-mode warning'ит).
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const showToast = useCallback((kind: 'success' | 'error', text: string): void => {
+    setCopyToast({ kind, text });
+    if (toastTimerRef.current !== null) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => {
+      setCopyToast(null);
+      toastTimerRef.current = null;
+    }, 2000);
+  }, []);
+
   if (!outcome) {
     return (
       <Card surface="surface-1" padding="md">
@@ -178,6 +208,33 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
   });
   const filenameHint = `${(room.name || 'Помещение').replace(/[^\p{L}\p{N}_-]+/gu, '_')}_${mode}`;
   const hasWarnings = result.warnings.length > 0;
+
+  // Handler клика по пустой части схемы → копируем debug-text в clipboard.
+  // navigator.clipboard.writeText доступен только в secure context (https /
+  // localhost) — на старых браузерах / file:// он отсутствует. Wrap в try/catch
+  // плюс проверка на существование, чтобы fallback-toast «не удалось скопировать»
+  // показывался корректно вместо runtime-error.
+  const handleCopyDebug = useCallback(async (): Promise<void> => {
+    const debugText = formatSchemeDebugText({
+      mode,
+      modeTitle,
+      room,
+      result,
+      catalog: fullCatalog,
+    });
+    try {
+      if (typeof navigator === 'undefined' || !navigator.clipboard?.writeText) {
+        showToast('error', 'Буфер обмена недоступен');
+        return;
+      }
+      await navigator.clipboard.writeText(debugText);
+      showToast('success', 'Схема скопирована в буфер обмена');
+    } catch {
+      // Возможные причины: пользователь запретил доступ к clipboard, страница
+      // не в secure-контексте, либо вкладка не сфокусирована (Firefox строг).
+      showToast('error', 'Не удалось скопировать');
+    }
+  }, [mode, modeTitle, room, result, fullCatalog, showToast]);
 
   return (
     <Card surface="surface-1" padding="md" className={styles.card}>
@@ -206,16 +263,35 @@ export function ResultCard({ mode, room, activeRolls }: ResultCardProps) {
       <div className={styles.visuallyHidden}>
         <ResultText result={result} modeTitle={modeTitle} />
       </div>
-      <SchemeView
-        ref={stageRef}
-        result={result}
-        room={room}
-        roll={roll}
-        catalog={fullCatalog}
-        widthPx={640}
-        heightPx={360}
-        roomAspect={room.length / room.width}
-      />
+      {/* Wrapper нужен, чтобы абсолютно-позиционированный toast рендерился
+          относительно SchemeView, а не Card (карточка содержит ещё header +
+          скрытый ResultText, у которых другая высота). */}
+      <div className={styles.schemeWrap}>
+        <SchemeView
+          ref={stageRef}
+          result={result}
+          room={room}
+          roll={roll}
+          catalog={fullCatalog}
+          widthPx={640}
+          heightPx={360}
+          roomAspect={room.length / room.width}
+          onCopyDebug={handleCopyDebug}
+        />
+        {copyToast && (
+          <div
+            role="status"
+            aria-live="polite"
+            className={
+              copyToast.kind === 'success'
+                ? schemeStyles.toast
+                : `${schemeStyles.toast} ${schemeStyles.toastError}`
+            }
+          >
+            {copyToast.text}
+          </div>
+        )}
+      </div>
     </Card>
   );
 }

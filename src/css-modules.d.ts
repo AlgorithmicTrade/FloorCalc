@@ -13,3 +13,10 @@ declare module '*.ttf?url' {
   const url: string;
   export default url;
 }
+
+/* Vite `?raw` query: импортирует содержимое любого файла как строку.
+ * Используется для встраивания RELEASE_NOTES.md в bundle (см. App.tsx). */
+declare module '*?raw' {
+  const content: string;
+  export default content;
+}

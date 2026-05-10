@@ -528,6 +528,289 @@ function lexLess(
 }
 
 /**
+ * «Whole-strip-first» стратегия — альтернативный кандидат для economy/optimal.
+ *
+ * Цель: уменьшить число кусков в случаях, когда basic greedy раскладывает
+ * мелкие хвостовые обрезки в начало каждой полосы и вынужден открывать новый
+ * рулон для остатка длины. Пример: room 16×16 м, рулон 2×20 м.
+ *   Greedy:           7 рулонов / 13 кусков (фрагментирует полосы 1,2,3,6,7).
+ *   Whole-strip-first: 7 рулонов / 11 кусков (7 целых полос + 4 куска из bank).
+ *
+ * Принцип:
+ *  1. Для каждой полосы пытаемся уложить ОДНИМ куском:
+ *     - сначала ищем в bank офкат с width≥stripWidth AND length≥needLength
+ *       (предпочитаем с минимальным `length-needLength` — чтобы не тратить
+ *       длинный хвост на короткую полосу); это уже один piece;
+ *     - иначе — открываем новый рулон достаточной длины (один piece, остаток в bank);
+ *     - если ни то ни другое — переход к multi-piece сборке.
+ *  2. Multi-piece сборка (фолбэк): если суммарная длина подходящих по ширине
+ *     offcut'ов в банке >= needLength, собираем полосу из bank без открытия
+ *     рулона (минимизирует rollsUsed). При выборе из bank в multi-piece
+ *     предпочитаем offcut с длиной максимально близкой к остатку (без перебора:
+ *     наибольший length среди подходящих не больше `remaining`, либо
+ *     наименьший length среди превышающих) — это снижает фрагментацию.
+ *  3. Если bank не покрывает — открываем новый рулон по `chooseBestRoll`.
+ *
+ * Применимость: имеет смысл в основном когда `room.length <= max(roll.length)`
+ * (большинство полос помещаются одним куском). В обратном случае результат
+ * близок к greedy и проигрывает по lex-key — `selectMixed` выберет другой
+ * кандидат сам.
+ */
+export function calculateWholeStripFirst(
+  room: Room,
+  activeRolls: readonly RollType[],
+  mode: Mode
+): CalculationResult {
+  if (activeRolls.length === 0) {
+    return {
+      mode, roomId: room.id, rollTypeId: '', rollsUsed: 0, seamCount: 0,
+      pieces: [], wasteAreaMm2: 0, warnings: ['Нет активных рулонов'], feasible: false
+    };
+  }
+  if (room.width <= 0 || room.length <= 0) {
+    return {
+      mode, roomId: room.id, rollTypeId: activeRolls[0]!.id, rollsUsed: 0,
+      seamCount: 0, pieces: [], wasteAreaMm2: 0,
+      warnings: ['Помещение не задано'], feasible: false
+    };
+  }
+
+  const warnings: string[] = [];
+  const maxRollWidth = Math.max(...activeRolls.map((r) => r.width));
+  const maxRollLength = Math.max(...activeRolls.map((r) => r.length));
+  if (room.length > maxRollLength) {
+    warnings.push('Помещение длиннее самого длинного активного рулона — потребуются поперечные доборы');
+  }
+
+  const rollIndexToType = new Map<number, RollType>();
+  const bank = new OffcutBank();
+  const pieces: Piece[] = [];
+  let rollsUsed = 0;
+
+  const strips = planStrips(room.width, room.length, maxRollWidth);
+
+  for (const strip of strips) {
+    let placedAtY = 0;
+    let needLength = strip.needLength;
+
+    // === Шаг 1: попытка уложить полосу одним куском из bank ===
+    // Среди bank-офкатов с width >= stripWidth и length >= needLength выбираем
+    // тот, у которого «излишек» (length - needLength) минимален — иначе
+    // расходуем длинный хвост на короткую нужду.
+    const singleFromBank = pickSingleStripOffcut(bank, strip.stripWidth, needLength);
+    if (singleFromBank !== null) {
+      const sourceRoll = rollIndexToType.get(singleFromBank.rollIndex);
+      pieces.push({
+        rollIndex: singleFromBank.rollIndex,
+        rollTypeId: sourceRoll?.id ?? activeRolls[0]!.id,
+        sourceX: singleFromBank.sourceX,
+        sourceY: singleFromBank.sourceY,
+        width: strip.stripWidth,
+        length: needLength,
+        placedAtX: strip.cursorX,
+        placedAtY: 0
+      });
+      bank.consume(singleFromBank, strip.stripWidth, needLength);
+      continue;
+    }
+
+    // === Шаг 2: попытка уложить полосу одним куском из нового рулона ===
+    // ВАЖНО: если в bank достаточно материала по суммарной длине, чтобы покрыть
+    // полосу без открытия нового рулона — пропускаем Шаг 2 и идём в multi-piece
+    // сборку из bank (Шаг 3). Это экономит rollsUsed: для baseline 16×16/2×20
+    // на 8-й полосе bank уже содержит 7 хвостов 2×4, sum=28000≥16000 → можно
+    // собрать из 4 кусков без открытия 8-го рулона.
+    const bankCanCoverWhole = sumBankCapacity(bank, strip.stripWidth) >= needLength;
+    const wholeRoll = bankCanCoverWhole
+      ? null
+      : chooseBestRoll(activeRolls, strip.stripWidth, needLength, mode);
+    if (wholeRoll !== null && wholeRoll.length >= needLength) {
+      const rollIndex = rollsUsed++;
+      rollIndexToType.set(rollIndex, wholeRoll);
+      pieces.push({
+        rollIndex,
+        rollTypeId: wholeRoll.id,
+        sourceX: 0, sourceY: 0,
+        width: strip.stripWidth,
+        length: needLength,
+        placedAtX: strip.cursorX,
+        placedAtY: 0
+      });
+      // Боковой обрезок (ширина рулона больше полосы).
+      if (strip.stripWidth < wholeRoll.width) {
+        bank.add({
+          rollIndex,
+          sourceX: strip.stripWidth, sourceY: 0,
+          width: wholeRoll.width - strip.stripWidth,
+          length: needLength
+        });
+      }
+      // Хвостовой обрезок (длина рулона больше использованной).
+      if (needLength < wholeRoll.length) {
+        bank.add({
+          rollIndex,
+          sourceX: 0, sourceY: needLength,
+          width: wholeRoll.width,
+          length: wholeRoll.length - needLength
+        });
+      }
+      continue;
+    }
+
+    // === Шаг 3: multi-piece сборка ===
+    // Если bank-офкатов суммарной длины достаточно — собираем полосу из bank
+    // (не открываем новый рулон, экономим rollsUsed). При выборе offcut'а
+    // предпочитаем тот, чья длина МАКСИМАЛЬНО соответствует остатку
+    // (наименьший «избыток»; среди недостаточных — максимальный length).
+    while (needLength > 0) {
+      const totalBankFit = sumBankCapacity(bank, strip.stripWidth);
+      const useBank = totalBankFit >= needLength;
+      let offcut: typeof bank extends OffcutBank ? ReturnType<OffcutBank['findBestFor']> : null = null;
+      if (useBank) {
+        offcut = pickBestForRemaining(bank, strip.stripWidth, needLength);
+      }
+
+      if (offcut !== null) {
+        const useLen = Math.min(offcut.length, needLength);
+        const sourceRoll = rollIndexToType.get(offcut.rollIndex);
+        pieces.push({
+          rollIndex: offcut.rollIndex,
+          rollTypeId: sourceRoll?.id ?? activeRolls[0]!.id,
+          sourceX: offcut.sourceX,
+          sourceY: offcut.sourceY,
+          width: strip.stripWidth,
+          length: useLen,
+          placedAtX: strip.cursorX,
+          placedAtY
+        });
+        bank.consume(offcut, strip.stripWidth, useLen);
+        placedAtY += useLen;
+        needLength -= useLen;
+      } else {
+        const chosen = chooseBestRoll(activeRolls, strip.stripWidth, needLength, mode);
+        if (chosen === null) {
+          warnings.push(`Нет рулона шириной ≥ ${strip.stripWidth} мм`);
+          break;
+        }
+        const rollIndex = rollsUsed++;
+        rollIndexToType.set(rollIndex, chosen);
+        const useLen = Math.min(chosen.length, needLength);
+        pieces.push({
+          rollIndex,
+          rollTypeId: chosen.id,
+          sourceX: 0, sourceY: 0,
+          width: strip.stripWidth,
+          length: useLen,
+          placedAtX: strip.cursorX,
+          placedAtY
+        });
+        if (strip.stripWidth < chosen.width) {
+          bank.add({
+            rollIndex,
+            sourceX: strip.stripWidth, sourceY: 0,
+            width: chosen.width - strip.stripWidth,
+            length: useLen
+          });
+        }
+        if (useLen < chosen.length) {
+          bank.add({
+            rollIndex,
+            sourceX: 0, sourceY: useLen,
+            width: chosen.width,
+            length: chosen.length - useLen
+          });
+        }
+        placedAtY += useLen;
+        needLength -= useLen;
+      }
+    }
+  }
+
+  // Rotation post-pass + compaction — те же что и у greedy.
+  applyRotationPass(pieces, bank, room, rollIndexToType);
+  rollsUsed = compactRollIndices(pieces, rollsUsed, bank, rollIndexToType);
+
+  let coveredArea = 0;
+  for (const p of pieces) coveredArea += p.width * p.length;
+  const roomArea = room.width * room.length;
+  const feasible = coveredArea === roomArea;
+  const seamCount = computeSeamCount(pieces, room);
+  const wasteAreaMm2 = bank.totalArea();
+  const rollTypeId = pickPrimaryRollTypeId(pieces, activeRolls);
+
+  return {
+    mode, roomId: room.id, rollTypeId, rollsUsed, seamCount,
+    pieces, wasteAreaMm2, warnings, feasible
+  };
+}
+
+/**
+ * Среди bank-офкатов с шириной >= w и длиной >= needLen вернуть тот, у которого
+ * избыток (length - needLen) минимален. Если ничей length не дотягивает — null.
+ */
+function pickSingleStripOffcut(
+  bank: OffcutBank,
+  w: number,
+  needLen: number
+): import('../types').Offcut | null {
+  let best: import('../types').Offcut | null = null;
+  let bestExcess = Number.POSITIVE_INFINITY;
+  for (const o of bank.all()) {
+    if (o.width >= w && o.length >= needLen) {
+      const excess = o.length - needLen;
+      if (excess < bestExcess) {
+        best = o;
+        bestExcess = excess;
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Суммарная длина bank-офкатов, у которых ширина >= w (т.е. могут участвовать
+ * в укладке полосы шириной w).
+ */
+function sumBankCapacity(bank: OffcutBank, w: number): number {
+  let sum = 0;
+  for (const o of bank.all()) {
+    if (o.width >= w) sum += o.length;
+  }
+  return sum;
+}
+
+/**
+ * Выбор offcut'а для остатка `remaining` в multi-piece сборке.
+ * Цель — минимизировать число кусков: предпочесть тот, что покроет остаток
+ * одним куском (length >= remaining, минимальный «избыток»); если такого нет
+ * — самый длинный среди недостаточных (закроет максимум за один piece).
+ */
+function pickBestForRemaining(
+  bank: OffcutBank,
+  w: number,
+  remaining: number
+): import('../types').Offcut | null {
+  let bestSufficient: import('../types').Offcut | null = null;
+  let bestExcess = Number.POSITIVE_INFINITY;
+  let bestInsufficient: import('../types').Offcut | null = null;
+  let bestLen = -1;
+  for (const o of bank.all()) {
+    if (o.width < w) continue;
+    if (o.length >= remaining) {
+      const excess = o.length - remaining;
+      if (excess < bestExcess) {
+        bestSufficient = o;
+        bestExcess = excess;
+      }
+    } else if (o.length > bestLen) {
+      bestInsufficient = o;
+      bestLen = o.length;
+    }
+  }
+  return bestSufficient ?? bestInsufficient;
+}
+
+/**
  * Определяет «primary» rollTypeId — тот тип рулона, куски которого суммарно
  * покрывают наибольшую площадь. Если pieces пустой — возвращает первый активный.
  */
