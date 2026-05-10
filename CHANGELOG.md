@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.6] - 2026-05-10
+
+### Added
+- **Web**: свободная планировка с polygon-aware раскроем, copy-debug схемы, release-notes modal и оптимизация выбора раскладки (1321f2c)
+
+  Решение:
+  - Добавить режим «свободная форма» в RoomEditor: пользователь рисует ортогональный полигон на сетке 5×5 точек, задаёт размер каждой стены — раскрой считается по bbox, на схеме клипуется по контуру.
+  - Polygon-aware partition в SchemeRenderer: каждый bbox-piece разбивается на максимальные visible-rectangles внутри ортогонального полигона — метки рулона теперь отображаются на каждом видимом сегменте, tooltip показывает реальный размер видимой части.
+  - Оптимизация economy: «whole-strip-first» как доп. стратегия-кандидат с приоритетом bank над открытием нового рулона при достаточной общей длине bank-офкатов; baseline 16×16/2×20 — было 7/13, стало 7/11 кусков.
+  - Edge-first reorder: multi-piece полосы (собранные из обрезков) переносятся к краю помещения после раскроя — швы стыков обрезков теперь у стены, а не посередине.
+  - Lex-key selectMixed: для свободной формы сравнение использует physical visible-count (через countVisibleSegments) вместо domain pieces.length; reorder применяется ко всем кандидатам ДО lex-сравнения; в optimal rollsUsed поднят выше cuts — при равном числе видимых кусков предпочитается меньше рулонов.
+  - Copy-debug схемы при клике на пустой фон: текстовый снимок (помещение, контур, сводка, типы рулонов, список pieces, видимые сегменты после кройки) копируется в clipboard с toast-фидбэком.
+  - Release-notes modal: при первом запуске новой версии единоразово показывается окно с notes из RELEASE_NOTES.md (без блока «Изменения:»); persist через localStorage.
+  
+  Изменения:
+  - src/domain/types.ts:
+    - Room расширен полями layout?: 'rect' | 'free' и shape?: RoomShape; добавлены типы RoomLayout, GridPoint, Wall, RoomShape.
+  - src/domain/shape.ts (новый):
+    - GRID_MAX, samePoint, areCollinearOrtho, wallDirection, makeWall, validateShape, buildShapePolygon, isPointInPolygon, polygonAreaMm2, clipRectByOrthoPolygon, countVisibleSegments — все pure-утилиты для свободной формы.
+  - src/domain/calculator/mixed.ts:
+    - calculateWholeStripFirst (новая) — стратегия с приоритетом bank над новым рулоном; helpers pickSingleStripOffcut, sumBankCapacity, pickBestForRemaining (выбор offcut с минимальным избытком).
+  - src/domain/calculator/selectMixed.ts:
+    - keyOf принимает polygon, использует countVisibleSegments для свободной формы; lex-key optimal изменён на [pieceCount, rollsUsed, cuts, waste]; reorder edge-first применяется ко всем кандидатам ДО lex-сравнения; добавлены WSF-кандидаты (mixed + mono для каждой ориентации).
+  - src/domain/calculator/reorder.ts (новый):
+    - reorderStripsEdgeFirst(pieces, roomWidth) — переставляет полосы так, чтобы multi-piece оказывались с края.
+  - src/store/roomsStore.ts:
+    - actions setRoomLayout(id, 'rect'|'free') и setRoomShape(id, shape); width/length для free-режима derived из bbox через buildShapePolygon.
+  - src/components/rooms/RoomEditor.tsx:
+    - Tabs «Прямоугольник | Свободная форма», RectDimensions выделен в отдельный internal-компонент.
+  - src/components/rooms/FreeShapeEditor.tsx + .module.css (новые):
+    - SVG-канвас 5×5 с overlay-формами размеров стен; collinear-multi-step стены, preview-«резинка» к курсору, alternate-offset + AABB-resolver для разнесения форм, заливка polygon при замыкании, скрытие внутренних точек, focus-подсветка стены, локальный WallSizeInput без spinner-стрелок.
+  - src/components/rooms/RoomResultPanel.tsx:
+    - Информативный EmptyState для free-режима: «Размеры стен не согласованы» / «Заполните размеры стен» вместо общего «Завершите планировку».
+  - src/components/result/SchemeRenderer.ts:
+    - SchemeNode.piece расширен полями partOfPieceId/partRealMm/clipPolygon; в free-режиме каждый Piece разбивается через clipRectByOrthoPolygon на visible-parts с собственными ноды piece+pieceLabel; в сводке «Кусков: N шт.» отображает physical visible-count для свободной формы; добавлена строка «Отрезано формой: X м²» в waste-stats.
+  - src/components/result/SchemeView.tsx:
+    - Новый кинд roomPolygon (Konva.Line с closed=true); pieceById маппит pieceId → {piece, partRealMm} для tooltip с реальным размером видимой части; clipFunc через Konva.Group.clipFunc для fallback-сценариев; onCopyDebug prop через ref, привязанный к click/tap на пустой stage; cursor=copy на фоне для discoverability.
+  - src/components/result/ResultCard.tsx + .module.css:
+    - handleCopyDebug через formatSchemeDebugText + navigator.clipboard.writeText; toast «Схема скопирована в буфер обмена» с auto-dismiss 2 сек; wrapper schemeWrap для позиционного контекста.
+  - src/lib/schemeDebugText.ts (новый):
+    - formatSchemeDebugText({mode, modeTitle, room, result, catalog}) — pure-функция текстового снимка: заголовок, описание помещения rect/free со стрелками направления стен, сводка с physical visible-count и пометкой (domain: N) при расхождении, секция «Видимые сегменты после кройки по контуру» для free-формы с разрезами.
+  - src/lib/releaseNotes.ts (новый):
+    - parseReleaseNotes(rawMd) + findReleaseNotesByVersion — парсер RELEASE_NOTES.md с удалением секций «Изменения:», footer «_This release was automatically generated_», горизонтальных разделителей.
+  - src/components/update/ReleaseNotesModal.tsx + .module.css (новые):
+    - Modal с inline mini-markdown-парсером (h3/ul/p, **bold**/*italic*/`code`); XSS-safe через React-элементы; Escape/backdrop/кнопка для закрытия; focus-trap; ARIA role=dialog; mobile bottom-sheet (≤480px).
+  - src/App.tsx:
+    - Импорт RELEASE_NOTES.md через ?raw; ReleaseNotesModal интегрирован с persist через localStorage (floorcalc:releaseNotesShown:v<X.Y.Z>); первый запуск любой версии не триггерит модал.
+  - src/css-modules.d.ts:
+    - declare module '*?raw' для Vite ?raw-импортов.
+  - vitest.config.ts:
+    - include расширен на tests/lib/**/*.test.ts.
+  - tests/domain/shape.test.ts (новый): 110 тестов — базовые утилиты, validateShape, buildShapePolygon, clipRectByOrthoPolygon.
+  - tests/domain/reorder.test.ts (новый): 11 тестов — empty/single/all-single/all-multi/реальная перестановка/инварианты.
+  - tests/domain/calculator.economy-piece-min.test.ts (новый): baseline 16×16/2×20 → 7/11/24 + multi-piece полоса в крайней позиции.
+  - tests/domain/calculator.free-shape-selection.test.ts (новый): 15 тестов — П-форма с двумя типами рулонов, контроль регрессии для rect, контроль economy.
+  - tests/lib/schemeDebugText.test.ts (новый): 16 тестов — rect/free, стрелки направления, секция видимых сегментов, физический count в сводке.
+  - tests/lib/releaseNotes.test.ts + releaseNotes.real.test.ts (новые): 10+1 тестов парсера на inline-фикстуре и реальном RELEASE_NOTES.md.
+  
+  Эффект:
+  - Пользователь может задавать произвольную ортогональную форму помещения (L, T, П, Z) через визуальный редактор; раскрой работает корректно с polygon-aware визуализацией и tooltip-размерами видимых частей.
+  - Economy для baseline 16×16/2×20: 7 рулонов / 11 кусков (было 7/13) — на 2 куска меньше при тех же рулонах и waste.
+  - Optimal для П-формы 12×12 с двумя типами рулонов: 4 рулона 2×20 / 8 visible (было 6 рулонов 2×15 / 8 visible) — на 2 рулона меньше при том же физическом числе кусков.
+  - Multi-piece полосы (швы стыков обрезков) физически переносятся к краю помещения — соответствует технологической практике ремонта.
+  - Copy-debug снимок схемы в clipboard позволяет передавать состояние раскроя текстом (для отчётов / поддержки) — не нужно делать скриншот.
+  - Release-notes modal автоматически показывает пользователю что нового после обновления — без необходимости вручную открывать changelog.
+  - Все 387 тестов зелёные; никаких регрессий для прямоугольной комнаты (lex-key и поведение идентичны при polygon=null).
+
 ## [1.1.5] - 2026-05-08
 
 ### Fixed
