@@ -2,6 +2,54 @@
 
 User-facing release notes for all versions.
 
+## v1.1.7
+
+_Released on 2026-05-10_
+
+### 🐛 Bug Fixes
+
+- **Web**: починить логику показа release-notes-модалки и автосоздание GitHub Releases в release.sh
+
+  Решение:
+  - Заменить детекцию «первого запуска» в App.tsx — раньше она искала ключи префикса floorcalc:releaseNotesShown:*, который появился только в v1.1.6 (значит у всех существующих пользователей таких ключей не было — логика молча маркировала их как новых и НЕ показывала модал). Теперь маркер старого пользователя — наличие ЛЮБОГО floorcalc:* ключа в localStorage (catalog/sidebar/etc).
+  - Добавить функцию create_github_release в .claude/scripts/release.sh — после успешного git push вызывает gh release create с notes из RELEASE_NOTES.md. Best-effort: при отсутствии gh / auth / сетевых проблем — warning, но релиз НЕ откатывается.
+  
+  Изменения:
+  - src/App.tsx:
+    - Введена константа FLOORCALC_KEY_PREFIX = 'floorcalc:'.
+    - shouldShowReleaseNotes теперь итерирует localStorage и считает hasAnyFloorCalcKey по этому префиксу (вместо старого RELEASE_NOTES_KEY_PREFIX); JSDoc обновлён, объясняет историю бага.
+  - .claude/scripts/release.sh:
+    - extract_release_notes_for_version: awk-helper, извлекает блок ## v<version> из RELEASE_NOTES.md, чистит footer и blank-leading.
+    - create_github_release: проверка command -v gh + gh auth status + gh release view (skip-if-exists), затем gh release create через --notes-file - (stdin, избегает Argument list too long); fallback --generate-notes если notes пустой.
+    - main: вызов create_github_release "$NEW_VERSION" после execute_release.
+  
+  Эффект:
+  - Пользователи v1.1.7 и далее увидят модальное окно «Что нового» при первом запуске новой версии (старый баг потерял v1.1.6 у существующих юзеров — для них модал v1.1.6 уже не появится, но для будущих версий работает корректно).
+  - /push автоматически создаёт GitHub Release (UI на github.com/.../releases) одновременно с git tag — больше не нужно запускать gh release create вручную.
+  - Если gh недоступен/не авторизован — release.sh пишет warning и подсказку, но релиз всё равно опубликован через git tag.
+  - 387/387 тестов passed; никаких регрессий.
+
+- **CI**: починить тест releaseNotes.real — проверять секцию, а не любое слово «Изменения:»
+
+  Решение:
+  - Заменить grep по всему тексту на проверку строки-маркера секции `^  Изменения:` с отступом — только это header вычищается парсером, обычные упоминания слова в bullet'ах допустимы.
+  - Раньше тест ловил любое вхождение «Изменения:» в RELEASE_NOTES.md, что ломалось на коммитах, у которых в Решение/Эффект встречается само слово (например, «без блока „Изменения:"»).
+  
+  Изменения:
+  - tests/lib/releaseNotes.real.test.ts:
+    - В тесте «ни в одной записи нет СЕКЦИИ Изменения:» теперь split('\n').some(l => /^ {2}Изменения:\s*$/.test(l)) вместо expect(...).not.toMatch(/Изменения:/).
+    - Сообщение теста уточнено: «нет СЕКЦИИ» (uppercase для подчёркивания, что это header, а не любое слово).
+  
+  Эффект:
+  - CI deploy-pages.yml для v1.1.6 + любых будущих релизов с упоминанием «Изменения:» в обычном тексте больше не падает на этом тесте.
+  - Семантика парсера не меняется — он по-прежнему удаляет именно секцию «  Изменения:» с её bullet'ами; тест теперь проверяет именно это.
+  - 387/387 тестов passed локально, без регрессий.
+
+
+---
+
+_This release was automatically generated from 2 commits._
+
 ## v1.1.6
 
 _Released on 2026-05-10_
