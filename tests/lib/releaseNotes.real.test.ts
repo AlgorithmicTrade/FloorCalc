@@ -25,9 +25,15 @@ describe('parseReleaseNotes on real RELEASE_NOTES.md', () => {
     }
   });
 
-  it('ни в одной записи нет «Изменения:», footer или горизонталей', () => {
+  it('ни в одной записи нет СЕКЦИИ «Изменения:», footer или горизонталей', () => {
     for (const e of entries) {
-      expect(e.contentMd).not.toMatch(/Изменения:/);
+      // Проверяем именно header секции (`^  Изменения:` с отступом), а не любое
+      // вхождение слова «Изменения:» в обычном тексте — оно может встретиться
+      // в bullet'ах внутри «Решение:» / «Эффект:» (например, «без блока „Изменения:"»).
+      const hasChangesSection = e.contentMd
+        .split('\n')
+        .some((l) => /^ {2}Изменения:\s*$/.test(l));
+      expect(hasChangesSection).toBe(false);
       expect(e.contentMd).not.toMatch(/automatically generated/);
       expect(e.contentMd.split('\n').some((l) => /^---\s*$/.test(l))).toBe(false);
     }
