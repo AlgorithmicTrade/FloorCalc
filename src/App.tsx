@@ -42,16 +42,29 @@ function readSidebarCollapsed(): boolean {
 }
 
 /**
+ * Префикс для всех floorcalc-ключей — используется для детекции
+ * «первый запуск ever» (нет ни одного ключа приложения в localStorage).
+ *
+ * РАНЬШЕ детекция считала по ключам `releaseNotesShown:*`, но это was a bug:
+ * v1.1.6 — первая версия с этой фичей, значит у всех существующих пользователей
+ * таких ключей не было, и они получили `releaseNotesShown:v1.1.6 = true`
+ * без показа модала. Теперь маркером «old user» служит наличие ЛЮБОГО
+ * floorcalc-ключа (минимум — `floorcalc:catalog:v1`, который создаётся при
+ * первой загрузке каталога).
+ */
+const FLOORCALC_KEY_PREFIX = 'floorcalc:';
+
+/**
  * Решение, показывать ли release-notes-модал для текущей сборки.
  *
  * Правила:
  *   - Если пользователь уже видел notes для этой версии (есть ключ
  *     `floorcalc:releaseNotesShown:v<X.Y.Z>` со значением 'true') —
  *     не показывать.
- *   - Если в localStorage НЕТ НИ ОДНОГО ключа `floorcalc:releaseNotesShown:*`
- *     — это первый запуск приложения вообще. Записываем текущую версию
- *     как «уже показано» и НЕ открываем модал (чтобы новый пользователь
- *     не получил спам сразу при заходе).
+ *   - Если в localStorage НЕТ НИ ОДНОГО ключа `floorcalc:*` (catalog, sidebar,
+ *     releaseNotesShown и т.д.) — это первый запуск приложения вообще.
+ *     Маркируем текущую версию и не открываем модал, чтобы новый пользователь
+ *     не получил спам сразу при заходе.
  *   - В остальных случаях — показать.
  *
  * Возвращает `false`, если localStorage недоступен (private-режим и т.п.).
@@ -61,17 +74,20 @@ function shouldShowReleaseNotes(currentVersion: string): boolean {
     const ownKey = RELEASE_NOTES_KEY_FOR(currentVersion);
     if (localStorage.getItem(ownKey) === 'true') return false;
 
-    // Проверяем, есть ли ХОТЬ один ключ нашего префикса.
-    let hasAny = false;
+    // First-ever launch detection: проверяем наличие ЛЮБЫХ floorcalc-ключей
+    // (catalog, sidebar и т.д.). Существующий пользователь имеет хотя бы
+    // `floorcalc:catalog:v1` — значит для него v1.1.x — апдейт, нужно показать
+    // notes.
+    let hasAnyFloorCalcKey = false;
     for (let i = 0; i < localStorage.length; i += 1) {
       const k = localStorage.key(i);
-      if (k && k.startsWith(RELEASE_NOTES_KEY_PREFIX)) {
-        hasAny = true;
+      if (k && k.startsWith(FLOORCALC_KEY_PREFIX)) {
+        hasAnyFloorCalcKey = true;
         break;
       }
     }
 
-    if (!hasAny) {
+    if (!hasAnyFloorCalcKey) {
       // Первый запуск: маркируем текущую версию и пропускаем модал.
       localStorage.setItem(ownKey, 'true');
       return false;

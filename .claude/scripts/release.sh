@@ -1304,6 +1304,84 @@ $(generate_changelog_entry "$NEW_VERSION" "$DATE")"
     echo ""
 }
 
+# === GITHUB RELEASE ===
+
+# Извлекает контент конкретной версии из RELEASE_NOTES.md (между «## v$VERSION»
+# и следующим «## v» или EOF). Чистит footer-строку и горизонтальные `---`.
+# Stdout: чистый markdown-контент без version-header.
+extract_release_notes_for_version() {
+    local version="$1"
+    local notes_file="$PROJECT_ROOT/RELEASE_NOTES.md"
+
+    if [ ! -f "$notes_file" ]; then
+        return 1
+    fi
+
+    awk -v target="## v${version}" '
+        $0 ~ "^## v" {
+            if (printing) exit
+            if ($0 == target) { printing = 1; next }
+        }
+        printing { print }
+    ' "$notes_file" \
+        | sed '/^_This release was automatically generated/d' \
+        | awk 'NR==1 && NF==0 { next } { print }'
+}
+
+# Создаёт GitHub Release для нового тега через gh CLI.
+# Best-effort: при отсутствии gh, отсутствии auth или сетевой ошибке —
+# warning, релиз остаётся опубликованным (тег уже на origin), GitHub Release
+# можно создать вручную позже через `gh release create vX.Y.Z`.
+create_github_release() {
+    local version="$1"
+    local tag="v${version}"
+
+    log_info "Creating GitHub Release for ${tag}..."
+
+    if ! command -v gh &> /dev/null; then
+        log_warning "gh CLI not installed — пропускаю создание GitHub Release"
+        log_info "Создать вручную: gh release create ${tag} --title \"${tag}\" --notes-file RELEASE_NOTES.md"
+        echo ""
+        return 0
+    fi
+
+    if ! gh auth status &> /dev/null; then
+        log_warning "gh CLI не авторизован — пропускаю GitHub Release"
+        log_info "Авторизация: gh auth login"
+        echo ""
+        return 0
+    fi
+
+    # Если релиз для этого тега уже существует — пропускаем (например, при ретрае).
+    if gh release view "$tag" &> /dev/null; then
+        log_warning "GitHub Release ${tag} уже существует — пропускаю"
+        echo ""
+        return 0
+    fi
+
+    local notes
+    notes=$(extract_release_notes_for_version "$version" || true)
+
+    if [ -z "${notes// /}" ]; then
+        # Fallback: если notes извлечь не удалось — auto-generated через gh.
+        log_warning "Не удалось извлечь notes из RELEASE_NOTES.md — использую --generate-notes"
+        gh release create "$tag" --title "$tag" --generate-notes 2>&1 | sed 's/^/  /' || {
+            log_warning "gh release create упал — релиз НЕ создан, но git tag опубликован"
+            echo ""
+            return 0
+        }
+    else
+        # Передаём notes через stdin (--notes-file -) — избегает «Argument list too long».
+        if echo "$notes" | gh release create "$tag" --title "$tag" --notes-file - 2>&1 | sed 's/^/  /'; then
+            log_success "GitHub Release ${tag} создан"
+        else
+            log_warning "gh release create упал — релиз НЕ создан, но git tag опубликован"
+            log_info "Можно создать вручную: gh release create ${tag} --title \"${tag}\" --notes-file RELEASE_NOTES.md"
+        fi
+    fi
+    echo ""
+}
+
 # === MAIN ===
 
 main() {
@@ -1366,6 +1444,10 @@ main() {
     update_changelog "$NEW_VERSION" "$DATE"
     update_release_notes "$NEW_VERSION" "$DATE"
     execute_release
+
+    # Создаём GitHub Release из свежего тега. Best-effort — не fail скрипт
+    # если gh не установлен / не авторизован (релиз уже опубликован git push'ом).
+    create_github_release "$NEW_VERSION"
 
     echo ""
     echo "╔═══════════════════════════════════════════════════════════╗"
