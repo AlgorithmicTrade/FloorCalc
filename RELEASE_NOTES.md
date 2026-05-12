@@ -2,6 +2,55 @@
 
 User-facing release notes for all versions.
 
+## v1.1.8
+
+_Released on 2026-05-12_
+
+### ✨ New Features
+
+- **Web**: ввести ровную укладку economy, ErrorBoundary против чёрного экрана и bounds-guard swap-back
+
+  Решение:
+  - Добавлен post-pass groupPiecesByLengthDescendingPerColumn для экономного режима: в каждой полосе (placedAtX) куски сортируются по убыванию length, placedAtY переписывается последовательно от 0. Длинные main-куски — сверху, доборы — снизу; идентичность куска (rollIndex/sourceX/sourceY/width/length/rotated) не меняется → инварианты rollsUsed/pieceCount/feasible сохранены by construction.
+  - Добавлен корневой class-component ErrorBoundary поверх AppShell — без него unhandled render-exception в React 19 отрывал дерево от #root, оставляя пустой body на чёрном фоне --color-canvas.
+  - В RoomResultPanel добавлен guard activeRolls.length === 0 → один общий EmptyState вместо двух ResultCard с пустым массивом, что устраняет одновременный unmount двух Konva-стейджей при снятии последней галки.
+  - В reorderStripsEdgeFirst добавлен guard: если внутри хоть одной группы byX ширина pieces неоднородна — layout не vertical-strip (это swap-back кандидат из selectMixed, у которого совпадают placedAtX, но разные width после транспозиции), reorder возвращает копию без изменений. Без guard cursorX += strip.width выводил placedAtX за room.width.
+  
+  Изменения:
+  - src/components/layout/ErrorBoundary.tsx:
+    - новый class-component с getDerivedStateFromError + componentDidCatch, fallback Card на --color-surface-1 с кнопкой «Перезагрузить страницу» и stack-сообщением.
+  - src/App.tsx:
+    - корневой фрагмент заменён на <ErrorBoundary>-обёртку вокруг AppShell, UpdateBanner и ReleaseNotesModal.
+  - src/components/rooms/RoomResultPanel.tsx:
+    - guard activeRolls.length === 0 → EmptyState «Выберите рулон в каталоге» (подсказка «Отметьте хотя бы один типоразмер слева»).
+  - src/domain/calculator/postProcess.ts:
+    - новая утилита groupPiecesByLengthDescendingPerColumn(pieces) — группировка по placedAtX, sort по length desc, переписывание placedAtY; rotated-куски пропускаются и оставляются в конце.
+  - src/domain/calculator/economy.ts:
+    - в конце calculateEconomy массив pieces прогоняется через post-pass; computeSeamCount и feasibility считаются по reorderedPieces.
+  - src/domain/calculator/mixed.ts:
+    - в calculateMixed и calculateWholeStripFirst post-pass применяется только при mode === 'economy' после rotation pass + compactRollIndices; для optimal поведение не меняется.
+  - src/domain/calculator/reorder.ts:
+    - в reorderStripsEdgeFirst после построения byX добавлен loop-guard: если найдена группа с разной width среди pieces — return ранний pieces.map(p => ({ ...p })).
+  - tests/domain/postProcess.test.ts:
+    - 9 unit-тестов утилиты (пустой массив, single piece, swap длинного и короткого, сохранение sourceX/Y/rollTypeId/width, rotated-кусок не сортируется, многополосный кейс, инвариант площади, инвариант pieceCount по rollIndex).
+  - tests/domain/calculator.economy-layout.test.ts:
+    - 11 регрессионных тестов на сценарий 7.6×13 м / 1.5×15 м + Сценарий 2b (6×10 / 4×30): проверка rollsUsed/pieces/seams/waste, монотонного убывания length по Y внутри полосы, плотности (Σlen = room.length), идентичности через selectMixed.
+  - tests/domain/reorder.test.ts:
+    - тест guard-кейса: pieces с разной width в группе byX → reorder no-op, координаты не меняются, bounds сохранены.
+  - tests/domain/calculator.mixed-orientation.test.ts:
+    - regression-тесты на bounds для selectMixed: 13×7.6 + 1.5×15 / 2×20, 21×11 + 2×20 (economy + optimal); проверка placedAtX + width ≤ room.width, placedAtY + length ≤ room.length, feasible=true и Σarea = room.width × room.length.
+  
+  Эффект:
+  - На сценарии пользователя 13×7.6 м / рулон 1.5×15 м: rollsUsed=5, pieces=11, seams=10, waste=13.70 м² сохранены; длинные main-куски (11/9/7/8 м) теперь на placedAtY=0 в каждой полосе, доборы (2/4/6/5 м) — снизу; визуальный хаос устранён без снижения экономности.
+  - Снятие всех галок при отрисованной схеме больше не вызывает чёрный экран; вместо него — EmptyState с подсказкой выбрать рулон. Любая будущая render-exception покажет fallback с stack-сообщением и кнопкой перезагрузки.
+  - selectMixed swap-back кандидаты больше не дают pieces с координатами вне комнаты (placedAtX + width ≤ room.width гарантированно); защищены кейсы 13×7.6 м и 21×11 м для рулонов 1.5×15 и 2×20.
+  - 420/420 тестов Vitest проходят (+20 новых); npm run build (typecheck + vite build) проходит без ошибок; bundle index-*.js — 1011.86 kB (изменение размера в пределах нормы).
+
+
+---
+
+_This release was automatically generated from 1 commits._
+
 ## v1.1.7
 
 _Released on 2026-05-10_
