@@ -27,6 +27,7 @@
 
 import type { CalculationResult, Mode, Piece, RollType, Room } from '../types';
 import { OffcutBank } from './bank';
+import { groupPiecesByLengthDescendingPerColumn } from './postProcess';
 import { computeSeamCount } from './seams';
 import { planStrips } from './strip';
 
@@ -202,17 +203,24 @@ export function calculateMixed(
   //   3) wasteAreaMm2 не учитывал материал отсутствующих в раскладке рулонов.
   rollsUsed = compactRollIndices(pieces, rollsUsed, bank, rollIndexToType);
 
+  // === Post-pass: ровная укладка для economy-режима ===
+  // Только для economy: длинные куски сверху полосы, доборы — снизу
+  // (visual ordering, не меняет нарезку и инварианты). Optimal в нём не нуждается:
+  // там каждый main-кусок изначально от свежего рулона на placedAtY=0.
+  const finalPieces =
+    mode === 'economy' ? groupPiecesByLengthDescendingPerColumn(pieces) : pieces;
+
   // === Feasibility ===
   let coveredArea = 0;
-  for (const p of pieces) coveredArea += p.width * p.length;
+  for (const p of finalPieces) coveredArea += p.width * p.length;
   const roomArea = room.width * room.length;
   const feasible = coveredArea === roomArea;
 
-  const seamCount = computeSeamCount(pieces, room);
+  const seamCount = computeSeamCount(finalPieces, room);
   const wasteAreaMm2 = bank.totalArea();
 
   // Определяем primary rollTypeId — тип, занимающий наибольшую площадь.
-  const rollTypeId = pickPrimaryRollTypeId(pieces, activeRolls);
+  const rollTypeId = pickPrimaryRollTypeId(finalPieces, activeRolls);
 
   return {
     mode,
@@ -220,7 +228,7 @@ export function calculateMixed(
     rollTypeId,
     rollsUsed,
     seamCount,
-    pieces,
+    pieces: finalPieces,
     wasteAreaMm2,
     warnings,
     feasible
@@ -730,17 +738,21 @@ export function calculateWholeStripFirst(
   applyRotationPass(pieces, bank, room, rollIndexToType);
   rollsUsed = compactRollIndices(pieces, rollsUsed, bank, rollIndexToType);
 
+  // Post-pass ровной укладки — только economy (см. комментарий в calculateMixed).
+  const finalPieces =
+    mode === 'economy' ? groupPiecesByLengthDescendingPerColumn(pieces) : pieces;
+
   let coveredArea = 0;
-  for (const p of pieces) coveredArea += p.width * p.length;
+  for (const p of finalPieces) coveredArea += p.width * p.length;
   const roomArea = room.width * room.length;
   const feasible = coveredArea === roomArea;
-  const seamCount = computeSeamCount(pieces, room);
+  const seamCount = computeSeamCount(finalPieces, room);
   const wasteAreaMm2 = bank.totalArea();
-  const rollTypeId = pickPrimaryRollTypeId(pieces, activeRolls);
+  const rollTypeId = pickPrimaryRollTypeId(finalPieces, activeRolls);
 
   return {
     mode, roomId: room.id, rollTypeId, rollsUsed, seamCount,
-    pieces, wasteAreaMm2, warnings, feasible
+    pieces: finalPieces, wasteAreaMm2, warnings, feasible
   };
 }
 

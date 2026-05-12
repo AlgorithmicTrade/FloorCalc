@@ -88,6 +88,36 @@ export function reorderStripsEdgeFirst(
   // Если всего одна полоса — возвращаем копию без изменений (placedAtX тот же).
   if (byX.size <= 1) return pieces.map((p) => ({ ...p }));
 
+  // === Guard: layout не является «vertical strip layout» ===
+  // Контракт reorder требует, чтобы pieces одной полосы имели одинаковую width
+  // (это инвариант алгоритмов calculateMixed/calculateWholeStripFirst в
+  // native-ориентации — все pieces одной strip нарезаются на одной stripWidth).
+  //
+  // Однако selectMixed применяет reorder и к swap-back кандидатам: pieces
+  // рассчитаны для swappedRoom (width↔length), потом транспонированы:
+  //   placedAtX := исходный placedAtY (cursorX свапнутой полосы),
+  //   placedAtY := исходный placedAtX (placedAtY внутри свапнутой полосы),
+  //   width    := исходная length, length := исходная width.
+  // В таком layout «полосы» горизонтальные (одинаковый placedAtY, разные placedAtX),
+  // а группировка по placedAtX сваливает в одну группу pieces РАЗНЫХ свап-полос —
+  // у них совпадает placedAtX (например, 0 — начало каждой свап-полосы), но
+  // width получается разный (это p.length из разных кусков свап-полосы).
+  //
+  // Признак: хотя бы одна группа byX содержит pieces с разной width.
+  // В таком случае reorder математически некорректен (cursorX += strip.width
+  // с шириной одного «представителя» даст placedAtX, выходящий за room.width).
+  // Безопасное no-op — вернуть копию без переупорядочивания: layout оставлен
+  // как есть, координаты гарантированно валидны (так его и собрал основной
+  // алгоритм для swappedRoom + транспозиция).
+  for (const strip of byX.values()) {
+    const w0 = strip.pieces[0]!.width;
+    for (let i = 1; i < strip.pieces.length; i++) {
+      if (strip.pieces[i]!.width !== w0) {
+        return pieces.map((p) => ({ ...p }));
+      }
+    }
+  }
+
   // === Шаг 2: сортировка ===
   // Сначала разделяем strips по типам, сохраняя исходный порядок (стабильность).
   const singles: Strip[] = [];

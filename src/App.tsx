@@ -16,6 +16,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
 import { RollCatalog } from '@/components/catalog/RollCatalog';
 import { RoomEditor } from '@/components/rooms/RoomEditor';
 import { RoomTabs } from '@/components/rooms/RoomTabs';
@@ -152,7 +153,7 @@ export function App() {
   }, [initUpdater]);
 
   return (
-    <>
+    <ErrorBoundary>
       <span className={styles.versionBadge} aria-label="Версия приложения">
         v{__APP_VERSION__}
       </span>
@@ -219,6 +220,6 @@ export function App() {
           onClose={closeReleaseNotes}
         />
       ) : null}
-    </>
+    </ErrorBoundary>
   );
 }

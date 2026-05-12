@@ -353,4 +353,107 @@ describe('calculateMixedBestOrientation', () => {
       expect('error' in opt).toBe(false);
     });
   });
+
+  describe('Regression: swap-back layout не выходит за границы комнаты (selectMixed)', () => {
+    // Баг: reorderStripsEdgeFirst применялся ко всем кандидатам selectMixed,
+    // включая swap-back (pieces для swappedRoom, транспонированные обратно).
+    // В swap-back полосы горизонтальные (одинаковый placedAtY, разные placedAtX),
+    // а группировка по placedAtX сваливала pieces разных свап-полос в одну
+    // «strip», после чего cursorX += strip.width генерировал координаты
+    // placedAtX >> room.width — куски «торчали» за правую стену.
+    //
+    // Guard в reorderStripsEdgeFirst: если хотя бы одна группа byX содержит
+    // pieces с разной width — layout не vertical-strip, reorder no-op.
+
+    const eps = 1;
+    const checkPiecesInBounds = (
+      pieces: ReadonlyArray<{ placedAtX: number; placedAtY: number; width: number; length: number }>,
+      room: { width: number; length: number },
+    ) => {
+      for (const p of pieces) {
+        expect(p.placedAtX).toBeGreaterThanOrEqual(-eps);
+        expect(p.placedAtX + p.width).toBeLessThanOrEqual(room.width + eps);
+        expect(p.placedAtY).toBeGreaterThanOrEqual(-eps);
+        expect(p.placedAtY + p.length).toBeLessThanOrEqual(room.length + eps);
+      }
+    };
+
+    describe('room 13×7.6 м, roll 1.5×15 м, economy', () => {
+      // Исходный bug-report: pieces placedAtX вплоть до 35000 при room.width=13000.
+      const room = createRoom('bug-13x7.6-1.5x15', 13, 7.6);
+      const roll = createRoll(1.5, 15);
+      const sr = selectMixed(room, [roll], 'economy');
+
+      it('нет ошибки', () => expect('error' in sr).toBe(false));
+      it('все pieces внутри границ помещения', () => {
+        if ('error' in sr) return;
+        checkPiecesInBounds(sr.result.pieces, room);
+      });
+      it('feasible=true (покрытие == площади помещения)', () => {
+        if ('error' in sr) return;
+        expect(sr.result.feasible).toBe(true);
+        const covered = sr.result.pieces.reduce((s, p) => s + p.width * p.length, 0);
+        expect(covered).toBe(room.width * room.length);
+      });
+    });
+
+    describe('room 13×7.6 м, roll 2×20 м, economy', () => {
+      // Второй кейс из bug-report — тоже с swap-back кандидатом.
+      const room = createRoom('bug-13x7.6-2x20', 13, 7.6);
+      const roll = createRoll(2, 20);
+      const sr = selectMixed(room, [roll], 'economy');
+
+      it('нет ошибки', () => expect('error' in sr).toBe(false));
+      it('все pieces внутри границ помещения', () => {
+        if ('error' in sr) return;
+        checkPiecesInBounds(sr.result.pieces, room);
+      });
+      it('feasible=true (покрытие == площади помещения)', () => {
+        if ('error' in sr) return;
+        expect(sr.result.feasible).toBe(true);
+        const covered = sr.result.pieces.reduce((s, p) => s + p.width * p.length, 0);
+        expect(covered).toBe(room.width * room.length);
+      });
+    });
+
+    describe('room 21×11 м, roll 2×20 м, economy (мобильный скриншот)', () => {
+      // Большое помещение из скриншота пользователя — куски «торчали» за правую границу.
+      const room = createRoom('bug-21x11-2x20', 11, 21);
+      const roll = createRoll(2, 20);
+      const sr = selectMixed(room, [roll], 'economy');
+
+      it('нет ошибки', () => expect('error' in sr).toBe(false));
+      it('все pieces внутри границ помещения', () => {
+        if ('error' in sr) return;
+        checkPiecesInBounds(sr.result.pieces, room);
+      });
+      it('feasible=true (покрытие == площади помещения)', () => {
+        if ('error' in sr) return;
+        expect(sr.result.feasible).toBe(true);
+        const covered = sr.result.pieces.reduce((s, p) => s + p.width * p.length, 0);
+        expect(covered).toBe(room.width * room.length);
+      });
+    });
+
+    describe('optimal-режим для тех же кейсов — тоже не должен выходить за границы', () => {
+      const cases: Array<{ name: string; roomW: number; roomL: number; rollW: number; rollL: number }> = [
+        { name: '13x7.6 / 1.5x15', roomW: 13, roomL: 7.6, rollW: 1.5, rollL: 15 },
+        { name: '13x7.6 / 2x20', roomW: 13, roomL: 7.6, rollW: 2, rollL: 20 },
+        { name: '21x11 / 2x20', roomW: 11, roomL: 21, rollW: 2, rollL: 20 },
+      ];
+      for (const c of cases) {
+        it(`${c.name} optimal: все pieces в bounds + feasible`, () => {
+          const room = createRoom(`opt-${c.name}`, c.roomW, c.roomL);
+          const roll = createRoll(c.rollW, c.rollL);
+          const sr = selectMixed(room, [roll], 'optimal');
+          expect('error' in sr).toBe(false);
+          if ('error' in sr) return;
+          checkPiecesInBounds(sr.result.pieces, room);
+          expect(sr.result.feasible).toBe(true);
+          const covered = sr.result.pieces.reduce((s, p) => s + p.width * p.length, 0);
+          expect(covered).toBe(room.width * room.length);
+        });
+      }
+    });
+  });
 });

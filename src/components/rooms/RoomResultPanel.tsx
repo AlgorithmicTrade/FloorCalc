@@ -45,6 +45,13 @@ export function RoomResultPanel() {
     }
   }
 
+  // Guard: если каталог пуст или все рулоны сняты — рендерим единый EmptyState
+  // вместо двух ResultCard'ов с пустым массивом. Это устраняет одновременный
+  // unmount двух Konva-стейджей (SchemeView) при снятии последней галки
+  // и предотвращает render-exception, который без ErrorBoundary раньше
+  // приводил к «чёрному экрану» (#root отрывается, body = --color-canvas).
+  const hasActiveRolls = activeRolls.length > 0;
+
   return (
     <div className={styles.panel}>
       {!hasGeometry ? (
@@ -57,6 +64,13 @@ export function RoomResultPanel() {
               hint="Ширина и длина в метрах."
             />
           )}
+        </Card>
+      ) : !hasActiveRolls ? (
+        <Card surface="surface-1" padding="md">
+          <EmptyState
+            title="Выберите рулон в каталоге"
+            hint="Отметьте хотя бы один типоразмер слева, чтобы посчитать раскрой."
+          />
         </Card>
       ) : (
         <>

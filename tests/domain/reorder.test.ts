@@ -214,6 +214,45 @@ describe('reorderStripsEdgeFirst', () => {
     expect(pieces).toEqual(before);
   });
 
+  it('guard: разная width в одной группе byX → no-op (swap-back layout)', () => {
+    // Эмулируем swap-back layout: pieces из swappedRoom (13×7.6),
+    // транспонированные обратно. У pieces разных свап-полос совпадает
+    // placedAtX=0 (это бывший placedAtY=0 — начало каждой свап-полосы),
+    // но width разный (это бывшая length их свап-полос — куски разной длины).
+    //
+    // Без guard: reorder группировал такие pieces в одну "strip", брал
+    // width у первого, cursorX накапливался → placedAtX >> room.width.
+    // С guard: layout не vertical-strip, возвращаем копию без изменений.
+    const pieces: Piece[] = [
+      // «Свап-полоса 0»: placedAtY=0, pieces по placedAtX 0/11000 — но это
+      // для теста guard важен только тот факт, что в группе placedAtX=0
+      // окажутся pieces с разной width.
+      makePiece(0, 0, 0, 11000, 1500),
+      makePiece(1, 11000, 0, 2000, 1500),
+      // «Свап-полоса 1»: placedAtY=1500.
+      makePiece(2, 0, 1500, 9000, 1500),
+      makePiece(3, 9000, 1500, 4000, 1500),
+      // «Свап-полоса 2»: placedAtY=3000.
+      makePiece(4, 0, 3000, 7000, 1500),
+      makePiece(5, 7000, 3000, 6000, 1500),
+    ];
+    const roomWidth = 13000;
+    const out = reorderStripsEdgeFirst(pieces, roomWidth);
+
+    // No-op: длина та же, координаты pieces те же (placedAtX/placedAtY).
+    expect(out).toHaveLength(pieces.length);
+    for (let i = 0; i < pieces.length; i++) {
+      expect(out[i]!.placedAtX).toBe(pieces[i]!.placedAtX);
+      expect(out[i]!.placedAtY).toBe(pieces[i]!.placedAtY);
+      expect(out[i]!.width).toBe(pieces[i]!.width);
+      expect(out[i]!.length).toBe(pieces[i]!.length);
+    }
+    // И — важная проверка: все pieces остаются в bounds [0, roomWidth].
+    for (const p of out) {
+      expect(p.placedAtX + p.width).toBeLessThanOrEqual(roomWidth);
+    }
+  });
+
   it('покрытие без пробелов и наложений после reorder (baseline 16×16/2×20)', () => {
     // Эмулируем результат whole-strip-first для 16×16 / 2×20:
     //   7 single-полос (целые куски 2×16) + 1 multi-полоса (4 куска 2×4).

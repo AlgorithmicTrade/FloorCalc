@@ -14,6 +14,7 @@
 
 import type { CalculationResult, Piece, RollType, Room } from '../types';
 import { OffcutBank } from './bank';
+import { groupPiecesByLengthDescendingPerColumn } from './postProcess';
 import { computeSeamCount } from './seams';
 import { planStrips } from './strip';
 
@@ -118,13 +119,21 @@ export function calculateEconomy(room: Room, roll: RollType): CalculationResult 
     }
   }
 
+  // === Post-pass: перекомпоновка кусков внутри каждой полосы ===
+  // Greedy-алгоритм укладывает offcut'ы первыми (placedAtY=0), новые рулоны —
+  // позже (placedAtY>0), что даёт визуально «хаотичную» картинку. Сортируем
+  // куски в каждой полосе по убыванию длины (длинные сверху, доборы снизу) —
+  // только геометрия `placedAtY`, идентичность кусков не меняется → инварианты
+  // `rollsUsed`/`pieceCount`/`feasible` сохранены by construction.
+  const reorderedPieces = groupPiecesByLengthDescendingPerColumn(pieces);
+
   // === Feasibility check ===
   let coveredArea = 0;
-  for (const p of pieces) coveredArea += p.width * p.length;
+  for (const p of reorderedPieces) coveredArea += p.width * p.length;
   const roomArea = room.width * room.length;
   const feasible = coveredArea === roomArea;
 
-  const seamCount = computeSeamCount(pieces, room);
+  const seamCount = computeSeamCount(reorderedPieces, room);
   const wasteAreaMm2 = bank.totalArea();
 
   return {
@@ -133,7 +142,7 @@ export function calculateEconomy(room: Room, roll: RollType): CalculationResult 
     rollTypeId: roll.id,
     rollsUsed,
     seamCount,
-    pieces,
+    pieces: reorderedPieces,
     wasteAreaMm2,
     warnings,
     feasible
